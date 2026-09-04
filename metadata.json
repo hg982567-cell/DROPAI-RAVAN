@@ -1,0 +1,6 @@
+{
+  "name": "DropAI - Autonomous Dropshipping Operating System",
+  "description": "Production-grade AI-powered dropshipping automation platform featuring intelligent product research, multi-store sync, supplier routing, pricing engine, and automated workflows.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
