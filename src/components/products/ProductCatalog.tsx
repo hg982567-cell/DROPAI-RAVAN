@@ -46,12 +46,18 @@ export const ProductCatalog: React.FC<ProductCatalogProps> = ({
   const [newPrice, setNewPrice] = useState('45');
   const [newSupplier, setNewSupplier] = useState('CJ Direct US');
 
-  const categories = ['ALL', ...Array.from(new Set(products.map((p) => p.category)))];
+  // Quick price adjustment modal
+  const [quickPriceModal, setQuickPriceModal] = useState<{ product: Product; price: string } | null>(null);
 
-  const filteredProducts = products.filter((p) => {
+  const categories = ['ALL', ...Array.from(new Set((products || []).map((p) => p.category).filter(Boolean)))];
+
+  const filteredProducts = (products || []).filter((p) => {
+    if (!p) return false;
+    const title = p.title || '';
+    const sku = (p as any).sku || p.handle || p.id || '';
     const matchesSearch =
-      p.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      p.sku.toLowerCase().includes(searchQuery.toLowerCase());
+      title.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      sku.toLowerCase().includes(searchQuery.toLowerCase());
     const matchesCategory = selectedCategory === 'ALL' || p.category === selectedCategory;
     return matchesSearch && matchesCategory;
   });
@@ -65,22 +71,41 @@ export const ProductCatalog: React.FC<ProductCatalogProps> = ({
 
     onAddProduct({
       title: newTitle,
+      handle: newTitle.toLowerCase().replace(/[^a-z0-9]+/g, '-'),
+      description: `Premium ${newCategory.toLowerCase()} product sourced directly from verified dropshipping fulfillment partners.`,
+      seoTitle: newTitle,
+      seoDescription: `Order ${newTitle} with tracked express delivery and satisfaction guarantee.`,
       category: newCategory,
+      tags: ['New Listing', newCategory, 'Active'],
       sku: `DA-SKU-${Math.floor(1000 + Math.random() * 9000)}`,
       sellingPrice: price,
+      compareAtPrice: Number((price * 1.4).toFixed(2)),
+      baseCost: cost,
       supplierCost: cost,
       shippingCost: 4.5,
-      netProfit,
-      marginPct,
+      netProfit: Number(netProfit.toFixed(2)),
+      targetMarginPct: Number(marginPct.toFixed(1)),
+      marginPct: Number(marginPct.toFixed(1)),
       stockTotal: 150,
       lowStockThreshold: 20,
-      primarySupplierName: newSupplier,
-      primarySupplierId: 'sup-1',
-      backupSupplierName: 'Shenzhen Apex',
-      backupSupplierId: 'sup-2',
-      publishedStores: ['AuraTrend Modern Lifestyle'],
+      syncStatus: 'SYNCED',
+      suppliers: [
+        {
+          supplierId: 'sup-1',
+          supplierName: newSupplier,
+          costPrice: cost,
+          shippingPrice: 4.5,
+          shippingDays: '3-5 days',
+          inStock: 150,
+          isPrimary: true,
+          failoverOrder: 1,
+        },
+      ],
+      demandScore: 85,
+      competitionScore: 50,
+      opportunityScore: 82,
+      salesLast30Days: 0,
       status: 'ACTIVE',
-      currency: 'USD',
       imageUrl: 'https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=600&auto=format&fit=crop&q=80',
     });
 
@@ -89,13 +114,17 @@ export const ProductCatalog: React.FC<ProductCatalogProps> = ({
   };
 
   const handleQuickPriceUpdate = (product: Product, newSellingPrice: number) => {
-    const netProfit = newSellingPrice - product.baseCost - product.shippingCost;
-    const marginPct = (netProfit / newSellingPrice) * 100;
+    const cost = (product as any).supplierCost ?? product.baseCost ?? 10;
+    const shipping = product.shippingCost ?? 4.5;
+    const netProfit = newSellingPrice - cost - shipping;
+    const marginPct = newSellingPrice > 0 ? (netProfit / newSellingPrice) * 100 : 0;
     onUpdateProduct(product.id, {
       sellingPrice: newSellingPrice,
       netProfit: Number(netProfit.toFixed(2)),
       targetMarginPct: Number(marginPct.toFixed(1)),
+      marginPct: Number(marginPct.toFixed(1)),
     });
+    setQuickPriceModal(null);
   };
 
   return (
@@ -154,127 +183,182 @@ export const ProductCatalog: React.FC<ProductCatalogProps> = ({
 
       {/* Products Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-        {filteredProducts.map((product) => (
-          <div
-            key={product.id}
-            className="rounded-xl bg-[#111113] border border-[#1F1F21] overflow-hidden shadow-sm hover:border-[#2D2D30] transition-all flex flex-col justify-between"
-          >
-            <div>
-              {/* Product Image & Badges */}
-              <div className="relative h-48 bg-[#0A0A0B] overflow-hidden">
-                <img
-                  src={product.imageUrl}
-                  alt={product.title}
-                  referrerPolicy="no-referrer"
-                  className="w-full h-full object-cover"
-                />
-                <div className="absolute top-3 left-3 flex items-center space-x-1.5">
-                  <span className="px-2 py-0.5 rounded-md bg-[#111113]/90 backdrop-blur-md text-[10px] font-mono text-[#D97706] border border-[#1F1F21]">
-                    {product.category}
-                  </span>
-                  <span className="px-2 py-0.5 rounded-md bg-emerald-950/80 backdrop-blur-md text-[10px] font-mono font-bold text-emerald-400 border border-emerald-800">
-                    {product.marginPct.toFixed(0)}% Margin
-                  </span>
-                </div>
+        {filteredProducts.map((product) => {
+          const marginPct = (product as any).marginPct ?? product.targetMarginPct ?? 50;
+          const stock = product.stockTotal ?? 100;
+          const lowStock = product.lowStockThreshold ?? 20;
+          const sku = (product as any).sku || (product.handle ? product.handle.toUpperCase().slice(0, 14) : `SKU-${product.id}`);
+          const cost = (product as any).supplierCost ?? product.baseCost ?? 0;
+          const price = product.sellingPrice ?? 0;
+          const profit = (product as any).netProfit ?? (price - cost - (product.shippingCost || 0));
+          const primarySup = (product as any).primarySupplierName || (product.suppliers && product.suppliers[0]?.supplierName) || 'CJ Direct US';
+          const backupSup = (product as any).backupSupplierName || (product.suppliers && product.suppliers[1]?.supplierName) || 'Shenzhen Apex';
+          const channels = (product as any).publishedStores && (product as any).publishedStores.length > 0
+            ? (product as any).publishedStores.join(', ')
+            : 'AuraTrend Modern Lifestyle';
 
-                <div className="absolute top-3 right-3">
-                  <span
-                    className={`px-2 py-0.5 rounded-md text-[10px] font-mono backdrop-blur-md ${
-                      product.stockTotal <= product.lowStockThreshold
-                        ? 'bg-amber-950/90 text-amber-300 border border-amber-700 font-bold'
-                        : 'bg-[#111113]/90 text-[#94A3B8] border border-[#1F1F21]'
-                    }`}
-                  >
-                    Stock: {product.stockTotal}
-                  </span>
-                </div>
-              </div>
+          return (
+            <div
+              key={product.id}
+              className="rounded-xl bg-[#111113] border border-[#1F1F21] overflow-hidden shadow-sm hover:border-[#2D2D30] transition-all flex flex-col justify-between"
+            >
+              <div>
+                {/* Product Image & Badges */}
+                <div className="relative h-48 bg-[#0A0A0B] overflow-hidden">
+                  <img
+                    src={product.imageUrl}
+                    alt={product.title}
+                    referrerPolicy="no-referrer"
+                    className="w-full h-full object-cover"
+                  />
+                  <div className="absolute top-3 left-3 flex items-center space-x-1.5">
+                    <span className="px-2 py-0.5 rounded-md bg-[#111113]/90 backdrop-blur-md text-[10px] font-mono text-[#D97706] border border-[#1F1F21]">
+                      {product.category}
+                    </span>
+                    <span className="px-2 py-0.5 rounded-md bg-emerald-950/80 backdrop-blur-md text-[10px] font-mono font-bold text-emerald-400 border border-emerald-800">
+                      {Number(marginPct).toFixed(0)}% Margin
+                    </span>
+                  </div>
 
-              {/* Body */}
-              <div className="p-5 space-y-3">
-                <div>
-                  <div className="text-[10px] font-mono text-[#64748B] uppercase">{product.sku}</div>
-                  <h3 className="text-sm font-serif font-bold text-[#E2E8F0] line-clamp-2 mt-0.5">
-                    {product.title}
-                  </h3>
-                </div>
-
-                {/* Financial breakdown */}
-                <div className="p-3 rounded-lg bg-[#151517] border border-[#1F1F21] grid grid-cols-3 gap-2 text-center">
-                  <div>
-                    <div className="text-[10px] text-[#64748B] font-mono">SUPPLIER</div>
-                    <div className="text-xs font-semibold text-[#94A3B8] font-mono">
-                      ${product.supplierCost.toFixed(2)}
-                    </div>
-                  </div>
-                  <div>
-                    <div className="text-[10px] text-[#64748B] font-mono">RETAIL</div>
-                    <div className="text-xs font-bold text-[#D97706] font-mono">
-                      ${product.sellingPrice.toFixed(2)}
-                    </div>
-                  </div>
-                  <div>
-                    <div className="text-[10px] text-[#64748B] font-mono">NET PROFIT</div>
-                    <div className="text-xs font-bold text-emerald-400 font-mono">
-                      +${product.netProfit.toFixed(2)}
-                    </div>
-                  </div>
-                </div>
-
-                {/* Suppliers & Store Info */}
-                <div className="text-[11px] text-[#94A3B8] space-y-1 pt-1">
-                  <div className="flex justify-between">
-                    <span className="text-[#64748B]">Primary Supplier:</span>
-                    <span className="font-medium text-[#E2E8F0]">{product.primarySupplierName}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-[#64748B]">Backup Failover:</span>
-                    <span className="font-medium text-[#94A3B8]">{product.backupSupplierName || 'None'}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-[#64748B]">Shopify Channel:</span>
-                    <span className="text-[#D97706] truncate max-w-[140px]">
-                      {product.publishedStores.join(', ')}
+                  <div className="absolute top-3 right-3">
+                    <span
+                      className={`px-2 py-0.5 rounded-md text-[10px] font-mono backdrop-blur-md ${
+                        stock <= lowStock
+                          ? 'bg-amber-950/90 text-amber-300 border border-amber-700 font-bold'
+                          : 'bg-[#111113]/90 text-[#94A3B8] border border-[#1F1F21]'
+                      }`}
+                    >
+                      Stock: {stock}
                     </span>
                   </div>
                 </div>
+
+                {/* Body */}
+                <div className="p-5 space-y-3">
+                  <div>
+                    <div className="text-[10px] font-mono text-[#64748B] uppercase">{sku}</div>
+                    <h3 className="text-sm font-serif font-bold text-[#E2E8F0] line-clamp-2 mt-0.5">
+                      {product.title}
+                    </h3>
+                  </div>
+
+                  {/* Financial breakdown */}
+                  <div className="p-3 rounded-lg bg-[#151517] border border-[#1F1F21] grid grid-cols-3 gap-2 text-center">
+                    <div>
+                      <div className="text-[10px] text-[#64748B] font-mono">SUPPLIER</div>
+                      <div className="text-xs font-semibold text-[#94A3B8] font-mono">
+                        ${Number(cost).toFixed(2)}
+                      </div>
+                    </div>
+                    <div>
+                      <div className="text-[10px] text-[#64748B] font-mono">RETAIL</div>
+                      <div className="text-xs font-bold text-[#D97706] font-mono">
+                        ${Number(price).toFixed(2)}
+                      </div>
+                    </div>
+                    <div>
+                      <div className="text-[10px] text-[#64748B] font-mono">NET PROFIT</div>
+                      <div className="text-xs font-bold text-emerald-400 font-mono">
+                        +${Number(profit).toFixed(2)}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Suppliers & Store Info */}
+                  <div className="text-[11px] text-[#94A3B8] space-y-1 pt-1">
+                    <div className="flex justify-between">
+                      <span className="text-[#64748B]">Primary Supplier:</span>
+                      <span className="font-medium text-[#E2E8F0]">{primarySup}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-[#64748B]">Backup Failover:</span>
+                      <span className="font-medium text-[#94A3B8]">{backupSup}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-[#64748B]">Shopify Channel:</span>
+                      <span className="text-[#D97706] truncate max-w-[140px]">
+                        {channels}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Actions Bar */}
+              <div className="p-4 bg-[#151517]/60 border-t border-[#1F1F21] flex items-center justify-between">
+                <button
+                  id={`ai-copywriter-${product.id}`}
+                  onClick={() => onOpenAICopywriter(product)}
+                  className="flex items-center space-x-1.5 px-3 py-1.5 rounded-lg bg-[#D97706]/15 hover:bg-[#D97706]/25 text-[#D97706] border border-[#D97706]/30 text-xs font-medium transition-colors cursor-pointer"
+                >
+                  <Sparkles className="w-3.5 h-3.5 text-[#D97706]" />
+                  <span>AI Copy & SEO</span>
+                </button>
+
+                <div className="flex items-center space-x-1">
+                  <button
+                    onClick={() => setQuickPriceModal({ product, price: product.sellingPrice?.toString() || '49.99' })}
+                    className="p-2 rounded-lg bg-[#151517] hover:bg-[#1F1F21] text-[#94A3B8] hover:text-[#E2E8F0] border border-[#2D2D30] text-xs transition-colors cursor-pointer"
+                    title="Adjust Price"
+                  >
+                    <DollarSign className="w-3.5 h-3.5" />
+                  </button>
+                  <button
+                    onClick={() => onDeleteProduct(product.id)}
+                    className="p-2 rounded-lg bg-[#151517] hover:bg-rose-950 text-[#94A3B8] hover:text-rose-400 border border-[#2D2D30] text-xs transition-colors cursor-pointer"
+                    title="Delete Product"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
+                </div>
               </div>
             </div>
+          );
+        })}
+      </div>
 
-            {/* Actions Bar */}
-            <div className="p-4 bg-[#151517]/60 border-t border-[#1F1F21] flex items-center justify-between">
+      {/* Quick Price Modal */}
+      {quickPriceModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#0A0A0B]/85 backdrop-blur-sm p-4">
+          <div className="w-full max-w-sm rounded-xl bg-[#111113] border border-[#1F1F21] p-6 space-y-4 shadow-2xl">
+            <h3 className="text-base font-serif font-bold text-[#E2E8F0]">
+              Adjust Price: {quickPriceModal.product.title}
+            </h3>
+            <div>
+              <label className="text-xs font-mono text-[#94A3B8] block mb-1">New Selling Price ($)</label>
+              <input
+                type="number"
+                step="0.01"
+                autoFocus
+                value={quickPriceModal.price}
+                onChange={(e) => setQuickPriceModal({ ...quickPriceModal, price: e.target.value })}
+                className="w-full px-3 py-2 rounded-lg bg-[#151517] border border-[#2D2D30] text-sm text-white focus:outline-none focus:border-[#D97706]"
+              />
+            </div>
+            <div className="flex justify-end space-x-2 pt-2 border-t border-[#1F1F21]">
               <button
-                id={`ai-copywriter-${product.id}`}
-                onClick={() => onOpenAICopywriter(product)}
-                className="flex items-center space-x-1.5 px-3 py-1.5 rounded-lg bg-[#D97706]/15 hover:bg-[#D97706]/25 text-[#D97706] border border-[#D97706]/30 text-xs font-medium transition-colors cursor-pointer"
+                type="button"
+                onClick={() => setQuickPriceModal(null)}
+                className="px-4 py-2 rounded-lg bg-[#151517] text-xs text-[#94A3B8] hover:text-white border border-[#2D2D30] cursor-pointer"
               >
-                <Sparkles className="w-3.5 h-3.5 text-[#D97706]" />
-                <span>AI Copy & SEO</span>
+                Cancel
               </button>
-
-              <div className="flex items-center space-x-1">
-                <button
-                  onClick={() => {
-                    const price = prompt('Enter new retail price ($):', product.sellingPrice.toString());
-                    if (price) handleQuickPriceUpdate(product, parseFloat(price));
-                  }}
-                  className="p-2 rounded-lg bg-[#151517] hover:bg-[#1F1F21] text-[#94A3B8] hover:text-[#E2E8F0] border border-[#2D2D30] text-xs transition-colors cursor-pointer"
-                  title="Adjust Price"
-                >
-                  <DollarSign className="w-3.5 h-3.5" />
-                </button>
-                <button
-                  onClick={() => onDeleteProduct(product.id)}
-                  className="p-2 rounded-lg bg-[#151517] hover:bg-rose-950 text-[#94A3B8] hover:text-rose-400 border border-[#2D2D30] text-xs transition-colors cursor-pointer"
-                  title="Delete Product"
-                >
-                  <Trash2 className="w-3.5 h-3.5" />
-                </button>
-              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  const val = parseFloat(quickPriceModal.price);
+                  if (!isNaN(val) && val > 0) {
+                    handleQuickPriceUpdate(quickPriceModal.product, val);
+                  }
+                }}
+                className="px-4 py-2 rounded-lg bg-[#D97706] hover:bg-[#B45309] text-xs font-bold text-black cursor-pointer"
+              >
+                Update Price
+              </button>
             </div>
           </div>
-        ))}
-      </div>
+        </div>
+      )}
 
       {/* Add Product Modal */}
       {showAddModal && (

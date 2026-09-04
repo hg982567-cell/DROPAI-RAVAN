@@ -16,15 +16,25 @@ import { api } from '../../services/api';
 import { ResearchProduct, Product } from '../../types';
 
 interface ProductResearchProps {
-  initialProducts: ResearchProduct[];
-  onImportToCatalog: (product: Partial<Product>) => void;
+  initialProducts?: ResearchProduct[];
+  researchProducts?: ResearchProduct[];
+  onImportToCatalog?: (product: Partial<Product>) => void;
+  onImportProduct?: (product: Product) => void;
 }
 
 export const ProductResearch: React.FC<ProductResearchProps> = ({
   initialProducts,
+  researchProducts,
   onImportToCatalog,
+  onImportProduct,
 }) => {
-  const [researchList, setResearchList] = useState<ResearchProduct[]>(initialProducts);
+  const initialItems = (researchProducts && researchProducts.length > 0)
+    ? researchProducts
+    : (initialProducts && initialProducts.length > 0)
+    ? initialProducts
+    : [];
+
+  const [researchList, setResearchList] = useState<ResearchProduct[]>(initialItems);
   const [categoryInput, setCategoryInput] = useState('All Categories');
   const [targetMargin, setTargetMargin] = useState(50);
   const [isSearching, setIsSearching] = useState(false);
@@ -34,7 +44,7 @@ export const ProductResearch: React.FC<ProductResearchProps> = ({
     setIsSearching(true);
     try {
       const results = await api.researchProducts(categoryInput, targetMargin);
-      setResearchList(results);
+      setResearchList(results || []);
     } catch (err) {
       console.error('Research error:', err);
     } finally {
@@ -46,26 +56,39 @@ export const ProductResearch: React.FC<ProductResearchProps> = ({
     const netProfit = item.estimatedSellingPrice - item.estimatedCost - item.estimatedShipping;
     const marginPct = (netProfit / item.estimatedSellingPrice) * 100;
 
-    onImportToCatalog({
+    const fullProduct: Product = {
+      id: `prod-${Date.now()}`,
       title: item.title,
+      handle: item.title.toLowerCase().replace(/[^a-z0-9]+/g, '-'),
+      description: item.notes || `AI-vetted viral trending ${item.category} product sourced from ${item.trendingPlatform}.`,
+      seoTitle: item.title,
+      seoDescription: `Order ${item.title} online with tracked fast courier delivery.`,
       category: item.category,
-      sku: `DA-RES-${Math.floor(1000 + Math.random() * 9000)}`,
-      sellingPrice: item.estimatedSellingPrice,
-      supplierCost: item.estimatedCost,
+      tags: ['Imported', 'AI-Research', item.trendingPlatform],
+      imageUrl: item.imageUrl,
+      status: 'ACTIVE',
+      baseCost: item.estimatedCost,
       shippingCost: item.estimatedShipping,
+      sellingPrice: item.estimatedSellingPrice,
+      compareAtPrice: Number((item.estimatedSellingPrice * 1.4).toFixed(2)),
+      targetMarginPct: Number(marginPct.toFixed(1)),
       netProfit: Number(netProfit.toFixed(2)),
-      marginPct: Number(marginPct.toFixed(1)),
       stockTotal: 250,
       lowStockThreshold: 25,
-      primarySupplierName: 'CJ Direct US',
-      primarySupplierId: 'sup-1',
-      backupSupplierName: 'AliExpress VIP',
-      backupSupplierId: 'sup-2',
-      publishedStores: ['AuraTrend Modern Lifestyle'],
-      status: 'ACTIVE',
-      currency: 'USD',
-      imageUrl: item.imageUrl,
-    });
+      syncStatus: 'SYNCED',
+      suppliers: [],
+      demandScore: item.demandScore,
+      competitionScore: item.competitionScore,
+      opportunityScore: item.overallScore,
+      createdAt: new Date().toISOString(),
+      salesLast30Days: 0,
+    };
+
+    if (onImportProduct) {
+      onImportProduct(fullProduct);
+    } else if (onImportToCatalog) {
+      onImportToCatalog(fullProduct);
+    }
 
     setImportedIds((prev) => ({ ...prev, [item.id]: true }));
   };
@@ -145,8 +168,29 @@ export const ProductResearch: React.FC<ProductResearchProps> = ({
       </div>
 
       {/* Research Results Cards */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {researchList.map((item) => {
+      {(researchList || []).length === 0 ? (
+        <div className="rounded-xl bg-[#111113] border border-[#1F1F21] p-12 text-center space-y-4">
+          <div className="w-12 h-12 rounded-lg bg-[#D97706]/10 text-[#D97706] flex items-center justify-center mx-auto">
+            <Search className="w-6 h-6" />
+          </div>
+          <div className="space-y-1">
+            <h3 className="text-base font-serif font-bold text-white">No Research Results Loaded</h3>
+            <p className="text-xs text-[#94A3B8] max-w-md mx-auto">
+              Run the AI Market Demand & Saturation Scanner above to discover trending, high-margin dropshipping products across TikTok and Amazon.
+            </p>
+          </div>
+          <button
+            onClick={handleRunAIResearch}
+            disabled={isSearching}
+            className="px-4 py-2 rounded-lg bg-[#D97706] hover:bg-[#B45309] text-black text-xs font-bold transition-all cursor-pointer inline-flex items-center space-x-2"
+          >
+            <Sparkles className="w-4 h-4" />
+            <span>Discover Winning Products</span>
+          </button>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          {(researchList || []).map((item) => {
           const isImported = importedIds[item.id];
           return (
             <div
@@ -271,7 +315,8 @@ export const ProductResearch: React.FC<ProductResearchProps> = ({
             </div>
           );
         })}
-      </div>
+        </div>
+      )}
     </div>
   );
 };
