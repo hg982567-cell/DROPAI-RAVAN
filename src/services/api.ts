@@ -13,10 +13,16 @@ import {
   SystemLog,
   AICommandTask,
   UserSession,
+  ApiKeyMetadata,
+  ApiKeyScope,
+  CreatedApiKeyResponse,
+  SecurityFinding,
+  PenTestResult,
+  SecurityDashboardStatus,
 } from '../types';
 
 export const api = {
-  // Security
+  // Security Config & Session Auth
   async getSecurityConfig() {
     const res = await fetch('/api/security/config');
     return res.json();
@@ -47,6 +53,63 @@ export const api = {
   },
   async logoutAll(): Promise<{ success: boolean; sessions: UserSession[] }> {
     const res = await fetch('/api/security/logout-all', { method: 'POST' });
+    return res.json();
+  },
+
+  // Security Dashboard, API Keys & Pen-Test Endpoints
+  async getSecurityStatus(): Promise<SecurityDashboardStatus> {
+    const res = await fetch('/api/security/status');
+    return res.json();
+  },
+  async getApiKeys(): Promise<ApiKeyMetadata[]> {
+    const res = await fetch('/api/security/keys');
+    return res.json();
+  },
+  async createApiKey(payload: {
+    name: string;
+    scopes: ApiKeyScope[];
+    environment?: 'LIVE' | 'TEST';
+    expiresInDays?: number;
+  }): Promise<CreatedApiKeyResponse> {
+    const res = await fetch('/api/security/keys', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    return res.json();
+  },
+  async rotateApiKey(id: string): Promise<CreatedApiKeyResponse> {
+    const res = await fetch(`/api/security/keys/${id}/rotate`, { method: 'POST' });
+    return res.json();
+  },
+  async revokeApiKey(id: string): Promise<{ success: boolean; message: string }> {
+    const res = await fetch(`/api/security/keys/${id}`, { method: 'DELETE' });
+    return res.json();
+  },
+  async toggleApiKeyStatus(id: string, status: 'ACTIVE' | 'DISABLED'): Promise<{ success: boolean; status: string }> {
+    const res = await fetch(`/api/security/keys/${id}/status`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ status }),
+    });
+    return res.json();
+  },
+  async getSecurityEvents(): Promise<any[]> {
+    const res = await fetch('/api/security/events');
+    return res.json();
+  },
+  async runSecurityAudit(): Promise<{ score: number; findings: SecurityFinding[]; status: SecurityDashboardStatus }> {
+    const res = await fetch('/api/security/audit/run', { method: 'POST' });
+    return res.json();
+  },
+  async runPenTest(): Promise<{
+    timestamp: string;
+    testsCount: number;
+    passedCount: number;
+    failedCount: number;
+    results: PenTestResult[];
+  }> {
+    const res = await fetch('/api/security/pentest/run', { method: 'POST' });
     return res.json();
   },
 

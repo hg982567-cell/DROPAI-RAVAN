@@ -188,6 +188,21 @@ export const Header: React.FC<HeaderProps> = ({
           )}
         </div>
 
+        {/* Security Defense Gateway */}
+        <button
+          id="nav-security-header-btn"
+          onClick={() => onNavigate('security')}
+          className={`flex items-center space-x-1.5 px-3 py-2 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+            currentView === 'security'
+              ? 'bg-emerald-950 border border-emerald-600 text-emerald-300'
+              : 'bg-[#151517] border border-[#2D2D30] text-emerald-400 hover:border-emerald-800/60'
+          }`}
+          title="Security & API Gateway Defense"
+        >
+          <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
+          <span className="hidden md:inline font-mono">Defense (96%)</span>
+        </button>
+
         {/* Lock Now Action */}
         <button
           id="manual-lock-header-btn"

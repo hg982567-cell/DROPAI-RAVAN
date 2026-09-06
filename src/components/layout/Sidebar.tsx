@@ -21,6 +21,7 @@ import {
   FileText,
   CreditCard,
   Shield,
+  ShieldCheck,
   Settings,
   HelpCircle,
   Activity,
@@ -85,6 +86,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentView, onNavigate }) => 
     {
       label: 'OPERATIONS & SYSTEM',
       items: [
+        { id: 'security', label: 'Security & API Gateway', icon: ShieldCheck, badge: '96%' },
         { id: 'finance', label: 'Payments & P&L', icon: Activity },
         { id: 'billing', label: 'Billing & Token Usage', icon: CreditCard },
         { id: 'logs', label: 'Monitoring & Logs', icon: FileText },

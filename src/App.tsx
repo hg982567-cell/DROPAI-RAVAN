@@ -63,6 +63,7 @@ import { SchedulerView } from './components/automation/SchedulerView';
 import { FinanceView } from './components/finance/FinanceView';
 import { SystemLogsView } from './components/monitoring/SystemLogsView';
 import { AdminPanel } from './components/admin/AdminPanel';
+import { SecurityDashboard } from './components/security/SecurityDashboard';
 import { SettingsView } from './components/settings/SettingsView';
 import { HelpDocsView } from './components/help/HelpDocsView';
 
@@ -455,6 +456,10 @@ export default function App() {
 
             {currentView === 'logs' && (
               <SystemLogsView logs={logs} />
+            )}
+
+            {currentView === 'security' && (
+              <SecurityDashboard />
             )}
 
             {currentView === 'admin' && (

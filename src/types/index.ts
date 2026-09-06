@@ -291,3 +291,103 @@ export interface NotificationItem {
   timestamp: string;
   actionUrl?: string;
 }
+
+// --- CYBERSECURITY ARCHITECTURE & API SECURITY TYPES ---
+
+export type ApiKeyScope =
+  | 'products:read'
+  | 'products:write'
+  | 'orders:read'
+  | 'orders:write'
+  | 'suppliers:read'
+  | 'suppliers:write'
+  | 'analytics:read'
+  | 'ai:use'
+  | 'shopify:read'
+  | 'shopify:write'
+  | 'admin:read'
+  | 'admin:write';
+
+export type ApiKeyStatus = 'ACTIVE' | 'REVOKED' | 'EXPIRED' | 'DISABLED';
+
+export interface ApiKeyMetadata {
+  id: string;
+  name: string;
+  prefix: string; // e.g. "DAI_live_x8F...2a9c"
+  scopes: ApiKeyScope[];
+  status: ApiKeyStatus;
+  createdAt: string;
+  expiresAt: string | null;
+  lastUsedAt: string | null;
+  usageCount: number;
+  environment: 'LIVE' | 'TEST';
+  rateLimitPerMin: number;
+}
+
+export interface CreatedApiKeyResponse {
+  key: ApiKeyMetadata;
+  secret: string; // Plaintext secret displayed only once at creation
+}
+
+export type SecurityFindingSeverity = 'CRITICAL' | 'HIGH' | 'MEDIUM' | 'LOW' | 'INFO';
+
+export interface SecurityFinding {
+  id: string;
+  title: string;
+  severity: SecurityFindingSeverity;
+  affectedComponent: string;
+  whyItMatters: string;
+  evidence: string;
+  recommendedFix: string;
+  securityTest: string;
+  status: 'RESOLVED' | 'VERIFIED' | 'NEEDS_ATTENTION';
+}
+
+export interface PenTestResult {
+  id: string;
+  name: string;
+  category:
+    | 'AUTHENTICATION'
+    | 'AUTHORIZATION_IDOR'
+    | 'API_KEY_SCOPES'
+    | 'RATE_LIMITING'
+    | 'INPUT_VALIDATION'
+    | 'SQL_INJECTION'
+    | 'XSS'
+    | 'SSRF'
+    | 'WEBHOOK_HMAC'
+    | 'SECURITY_HEADERS';
+  endpoint: string;
+  method: 'GET' | 'POST' | 'PUT' | 'DELETE' | 'PATCH';
+  weaknessTested: string;
+  payload: string;
+  status: 'PASS' | 'FAIL';
+  httpStatus: number;
+  responsePreview: string;
+  explanation: string;
+  remediation: string;
+  timestamp: string;
+}
+
+export interface SecurityDashboardStatus {
+  securityScore: number;
+  activeKeysCount: number;
+  expiringSoonCount: number;
+  revokedKeysCount: number;
+  securityEventsToday: number;
+  highRiskEventsToday: number;
+  integrations: {
+    id: string;
+    name: string;
+    status: 'PROTECTED' | 'WARNING';
+    type: string;
+    details: string;
+  }[];
+  protections: {
+    id: string;
+    name: string;
+    active: boolean;
+    detail: string;
+  }[];
+  lastAuditAt: string;
+}
