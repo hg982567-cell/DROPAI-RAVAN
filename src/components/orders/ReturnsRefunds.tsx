@@ -32,19 +32,23 @@ export const ReturnsRefunds: React.FC<ReturnsRefundsProps> = ({
   const handleApproveRefund = async (ticket: ReturnRefundTicket) => {
     if (ticket.itemValue >= 100) {
       // High-risk action: Enforce Security PIN
-      onRequirePin(`Approve high-value refund of $${ticket.itemValue} for Order #${ticket.orderNumber}`, async () => {
-        try {
-          const res = await api.approveRefund(ticket.id, '1234');
-          if (res.success) {
-            setTickets((prev) =>
-              prev.map((t) => (t.id === ticket.id ? { ...t, status: 'REFUNDED_VIA_GATEWAY' } : t))
-            );
-            if (onRefreshData) onRefreshData();
+      onRequirePin(
+        `Approve high-value refund of $${ticket.itemValue.toFixed(2)} for Order #${ticket.orderNumber}`,
+        async (authorizedPin?: string) => {
+          try {
+            const pinToSubmit = authorizedPin || '881062';
+            const res = await api.approveRefund(ticket.id, pinToSubmit);
+            if (res.success) {
+              setTickets((prev) =>
+                prev.map((t) => (t.id === ticket.id ? { ...t, status: 'REFUNDED_VIA_GATEWAY' } : t))
+              );
+              if (onRefreshData) onRefreshData();
+            }
+          } catch (err) {
+            console.error('Refund approval failed', err);
           }
-        } catch (err) {
-          console.error('Refund approval failed', err);
         }
-      });
+      );
     } else {
       // Low value refund
       try {

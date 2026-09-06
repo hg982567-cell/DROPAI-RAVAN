@@ -50,8 +50,8 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   const handleSaveSecurity = async () => {
     setPinFeedback('');
     if (newPinInput) {
-      if (newPinInput.length !== 4 || isNaN(Number(newPinInput))) {
-        setPinFeedback('PIN must be exactly 4 digits.');
+      if (newPinInput.length < 4 || newPinInput.length > 8 || isNaN(Number(newPinInput))) {
+        setPinFeedback('PIN must be between 4 and 8 numeric digits.');
         return;
       }
       if (newPinInput !== confirmPinInput) {
@@ -160,11 +160,11 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
         {/* Change PIN Form */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2">
           <div className="space-y-1.5">
-            <label className="text-xs text-[#94A3B8]">New 4-Digit Security PIN</label>
+            <label className="text-xs text-[#94A3B8]">New Security PIN (4-8 Digits)</label>
             <input
               type="password"
-              maxLength={4}
-              placeholder="e.g. 1234"
+              maxLength={8}
+              placeholder="e.g. 881062"
               value={newPinInput}
               onChange={(e) => setNewPinInput(e.target.value)}
               className="w-full px-3 py-2 rounded-lg bg-[#151517] border border-[#2D2D30] text-[#E2E8F0] font-mono text-center tracking-widest text-lg focus:outline-none focus:border-[#D97706]"
@@ -172,11 +172,11 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
           </div>
 
           <div className="space-y-1.5">
-            <label className="text-xs text-[#94A3B8]">Confirm 4-Digit Security PIN</label>
+            <label className="text-xs text-[#94A3B8]">Confirm Security PIN</label>
             <input
               type="password"
-              maxLength={4}
-              placeholder="e.g. 1234"
+              maxLength={8}
+              placeholder="e.g. 881062"
               value={confirmPinInput}
               onChange={(e) => setConfirmPinInput(e.target.value)}
               className="w-full px-3 py-2 rounded-lg bg-[#151517] border border-[#2D2D30] text-[#E2E8F0] font-mono text-center tracking-widest text-lg focus:outline-none focus:border-[#D97706]"

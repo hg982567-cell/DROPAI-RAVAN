@@ -1,10 +1,10 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Lock, ShieldAlert, X, AlertCircle } from 'lucide-react';
 import { api } from '../../services/api';
 
 interface PinAuthModalProps {
   actionDescription: string;
-  onAuthorized: () => void;
+  onAuthorized: (pin?: string) => void;
   onCancel: () => void;
 }
 
@@ -17,11 +17,33 @@ export const PinAuthModal: React.FC<PinAuthModalProps> = ({
   const [error, setError] = useState<string | null>(null);
   const [isVerifying, setIsVerifying] = useState(false);
 
+  // Keyboard typing support
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key >= '0' && e.key <= '9') {
+        if (pin.length < 6) {
+          handleDigit(e.key);
+        }
+      } else if (e.key === 'Backspace') {
+        handleBackspace();
+      } else if (e.key === 'Escape') {
+        onCancel();
+      } else if (e.key === 'Enter') {
+        if (pin.length >= 4) {
+          verify(pin);
+        }
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [pin]);
+
   const handleDigit = (digit: string) => {
-    if (pin.length < 4) {
+    if (pin.length < 6) {
       const next = pin + digit;
       setPin(next);
-      if (next.length === 4) {
+      setError(null);
+      if (next.length === 6) {
         verify(next);
       }
     }
@@ -37,13 +59,13 @@ export const PinAuthModal: React.FC<PinAuthModalProps> = ({
     setError(null);
     try {
       const res = await api.verifyPin(pinToVerify);
-      if (res.valid) {
-        onAuthorized();
+      if (res.success || res.valid) {
+        onAuthorized(pinToVerify);
       } else {
-        setError(res.error || 'Incorrect security PIN. Default is 1234.');
+        setError(res.error || 'Incorrect security PIN. Default is 881062.');
         setPin('');
       }
-    } catch (err: any) {
+    } catch {
       setError('Verification failed. Try again.');
       setPin('');
     } finally {
@@ -69,9 +91,9 @@ export const PinAuthModal: React.FC<PinAuthModalProps> = ({
           <p className="text-[#94A3B8] leading-relaxed font-mono text-[11px]">{actionDescription}</p>
         </div>
 
-        {/* PIN Indicators */}
-        <div className="flex justify-center space-x-3 py-2">
-          {[0, 1, 2, 3].map((i) => (
+        {/* PIN Indicators (6 digits) */}
+        <div className="flex justify-center space-x-2.5 py-2">
+          {[0, 1, 2, 3, 4, 5].map((i) => (
             <div
               key={i}
               className={`w-3.5 h-3.5 rounded-full border transition-all ${
@@ -105,11 +127,14 @@ export const PinAuthModal: React.FC<PinAuthModalProps> = ({
           ))}
           <button
             type="button"
-            onClick={() => setPin('1234')}
+            onClick={() => {
+              setPin('881062');
+              verify('881062');
+            }}
             className="h-11 rounded-xl text-[10px] font-mono text-[#D97706] hover:bg-[#151517] cursor-pointer"
-            title="Auto-fill default demo PIN"
+            title="Auto-fill default security PIN 881062"
           >
-            DEMO: 1234
+            USE 881062
           </button>
           <button
             type="button"
@@ -129,7 +154,7 @@ export const PinAuthModal: React.FC<PinAuthModalProps> = ({
         </div>
 
         <div className="text-center text-[10px] text-[#64748B] font-mono">
-          Default development PIN is <strong className="text-[#94A3B8]">1234</strong>
+          Security PIN password is <strong className="text-[#D97706]">881062</strong>
         </div>
       </div>
     </div>

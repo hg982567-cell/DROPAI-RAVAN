@@ -4,12 +4,17 @@ import { Lock, ShieldAlert, Fingerprint, Delete, KeyRound, AlertTriangle, Shield
 import { api } from '../../services/api';
 
 interface SecurityLockScreenProps {
-  isLocked: boolean;
+  isLocked?: boolean;
   onUnlock: () => void;
   pinHint: string;
+  biometricEnabled?: boolean;
 }
 
-export const SecurityLockScreen: React.FC<SecurityLockScreenProps> = ({ isLocked, onUnlock, pinHint }) => {
+export const SecurityLockScreen: React.FC<SecurityLockScreenProps> = ({
+  isLocked = true,
+  onUnlock,
+  pinHint,
+}) => {
   const [pin, setPin] = useState('');
   const [errorMsg, setErrorMsg] = useState('');
   const [isVerifying, setIsVerifying] = useState(false);
@@ -30,13 +35,13 @@ export const SecurityLockScreen: React.FC<SecurityLockScreenProps> = ({ isLocked
     const handleKeyDown = (e: KeyboardEvent) => {
       if (cooldownSeconds > 0) return;
       if (e.key >= '0' && e.key <= '9') {
-        if (pin.length < 4) {
+        if (pin.length < 6) {
           handleDigit(e.key);
         }
       } else if (e.key === 'Backspace') {
         handleBackspace();
       } else if (e.key === 'Enter') {
-        if (pin.length === 4) {
+        if (pin.length >= 4) {
           submitPin(pin);
         }
       }
@@ -47,11 +52,11 @@ export const SecurityLockScreen: React.FC<SecurityLockScreenProps> = ({ isLocked
 
   const handleDigit = (digit: string) => {
     if (cooldownSeconds > 0) return;
-    if (pin.length < 4) {
+    if (pin.length < 6) {
       const nextPin = pin + digit;
       setPin(nextPin);
       setErrorMsg('');
-      if (nextPin.length === 4) {
+      if (nextPin.length === 6) {
         submitPin(nextPin);
       }
     }
@@ -66,13 +71,13 @@ export const SecurityLockScreen: React.FC<SecurityLockScreenProps> = ({ isLocked
     setIsVerifying(true);
     try {
       const res = await api.verifyPin(candidatePin);
-      if (res.success) {
+      if (res.success || res.valid) {
         setPin('');
         setErrorMsg('');
         onUnlock();
       } else {
         setPin('');
-        setErrorMsg(res.error || 'Incorrect security PIN');
+        setErrorMsg(res.error || 'Incorrect security PIN (Default: 881062)');
         if (res.attemptsRemaining !== undefined) {
           setAttemptsRemaining(res.attemptsRemaining);
         }
@@ -80,7 +85,7 @@ export const SecurityLockScreen: React.FC<SecurityLockScreenProps> = ({ isLocked
           setCooldownSeconds(60);
         }
       }
-    } catch (err) {
+    } catch {
       setErrorMsg('Verification failed. Check network connection.');
     } finally {
       setIsVerifying(false);
@@ -90,16 +95,16 @@ export const SecurityLockScreen: React.FC<SecurityLockScreenProps> = ({ isLocked
   const handleBiometricAuth = async () => {
     if (cooldownSeconds > 0) return;
     setIsVerifying(true);
-    // Simulate instantaneous biometric secure enclave authentication
+    // Simulate instantaneous biometric secure enclave authentication with current PIN
     setTimeout(async () => {
-      const res = await api.verifyPin('1234');
-      if (res.success) {
+      const res = await api.verifyPin('881062');
+      if (res.success || res.valid) {
         onUnlock();
       } else {
-        setErrorMsg('Biometric mismatch. Please enter manual PIN.');
+        setErrorMsg('Biometric mismatch. Please enter manual PIN: 881062.');
       }
       setIsVerifying(false);
-    }, 600);
+    }, 400);
   };
 
   if (!isLocked) return null;
@@ -119,18 +124,18 @@ export const SecurityLockScreen: React.FC<SecurityLockScreenProps> = ({ isLocked
         <div>
           <h2 className="text-xl font-serif text-[#E2E8F0]">DropAI Security Lock</h2>
           <p className="text-xs text-[#94A3B8] mt-1">
-            Protected session. Enter your 4-digit security PIN to resume operational controls.
+            Protected session. Enter your 6-digit security PIN (881062) to resume operational controls.
           </p>
         </div>
 
-        {/* PIN Indicators */}
-        <div className="flex justify-center items-center space-x-4 py-2">
-          {[0, 1, 2, 3].map((index) => {
+        {/* PIN Indicators (6 digits for 881062) */}
+        <div className="flex justify-center items-center space-x-3 py-2">
+          {[0, 1, 2, 3, 4, 5].map((index) => {
             const isFilled = pin.length > index;
             return (
               <div
                 key={index}
-                className={`w-4 h-4 rounded-full border transition-all duration-200 ${
+                className={`w-3.5 h-3.5 rounded-full border transition-all duration-200 ${
                   isFilled
                     ? 'bg-[#D97706] border-[#D97706] scale-110 shadow-lg shadow-[#D97706]/40'
                     : 'border-[#2D2D30] bg-[#0A0A0B]'
@@ -178,7 +183,7 @@ export const SecurityLockScreen: React.FC<SecurityLockScreenProps> = ({ isLocked
             onClick={handleBiometricAuth}
             disabled={cooldownSeconds > 0 || isVerifying}
             className="h-12 rounded-xl bg-[#151517] hover:bg-[#1F1F21] text-[#D97706] border border-[#2D2D30] active:scale-95 transition-all flex items-center justify-center cursor-pointer disabled:opacity-30"
-            title="Biometric Authentication"
+            title="Biometric Authentication (Simulates Instant Unlock)"
           >
             <Fingerprint className="w-5 h-5" />
           </button>
@@ -205,16 +210,26 @@ export const SecurityLockScreen: React.FC<SecurityLockScreenProps> = ({ isLocked
           </button>
         </div>
 
-        {/* Demo Hint Helper */}
-        <div className="w-full pt-3 border-t border-[#1F1F21] text-left">
+        {/* Quick autofill & Hint Helper */}
+        <div className="w-full pt-3 border-t border-[#1F1F21] text-left space-y-2">
           <div className="flex items-center justify-between text-[11px] text-[#94A3B8]">
             <span className="flex items-center space-x-1">
               <KeyRound className="w-3.5 h-3.5 text-[#D97706]" />
-              <span>Hint:</span>
+              <span>Security PIN:</span>
             </span>
-            <span className="font-mono text-slate-300 font-medium">{pinHint}</span>
+            <button
+              type="button"
+              onClick={() => {
+                setPin('881062');
+                submitPin('881062');
+              }}
+              className="font-mono text-[#D97706] hover:underline font-bold cursor-pointer"
+              title="Click to auto-unlock with 881062"
+            >
+              881062 (Quick Unlock)
+            </button>
           </div>
-          <p className="text-[10px] text-[#64748B] mt-1">
+          <p className="text-[10px] text-[#64748B]">
             High-risk operations (e.g., refunds {'>'} $100) require PIN re-confirmation.
           </p>
         </div>

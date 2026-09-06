@@ -75,8 +75,8 @@ export default function App() {
   const [selectedStoreId, setSelectedStoreId] = useState<string>('store-1');
 
   // Security Configuration
-  const [securityPin, setSecurityPin] = useState<string>('1234');
-  const [pinHint, setPinHint] = useState<string>('Default PIN is 1234');
+  const [securityPin, setSecurityPin] = useState<string>('881062');
+  const [pinHint, setPinHint] = useState<string>('Default PIN is 881062');
   const [autoLockMinutes, setAutoLockMinutes] = useState<number>(10);
   const [sessions, setSessions] = useState<UserSession[]>(INITIAL_SESSIONS);
 
@@ -190,6 +190,7 @@ export default function App() {
 
   const handleLockNow = () => {
     setIsLocked(true);
+    api.lockSystem().catch(() => {});
   };
 
   const handleOpenPinGate = (actionDescription: string, onAuthorized: () => void) => {
@@ -258,6 +259,7 @@ export default function App() {
   if (isLocked) {
     return (
       <SecurityLockScreen
+        isLocked={isLocked}
         onUnlock={handleUnlock}
         pinHint={pinHint}
         biometricEnabled={true}

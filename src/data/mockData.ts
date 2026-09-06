@@ -17,8 +17,8 @@ import {
 
 export const INITIAL_SECURITY_CONFIG: SecurityConfig = {
   isLocked: false,
-  pinHash: '1234', // Default demo PIN
-  pinHint: 'Default PIN is 1234',
+  pinHash: '881062', // Security PIN password
+  pinHint: 'Default PIN is 881062',
   autoLockMinutes: 15,
   biometricEnabled: true,
   failedAttempts: 0,
