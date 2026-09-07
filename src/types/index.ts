@@ -148,7 +148,7 @@ export interface Supplier {
 export interface StoreIntegration {
   id: string;
   name: string;
-  platform: 'Shopify' | 'WooCommerce' | 'Amazon' | 'Flipkart' | 'eBay' | 'Etsy';
+  platform: 'Shopify' | 'WooCommerce' | 'Amazon' | 'Flipkart' | 'eBay' | 'Etsy' | 'DropAI' | 'Others' | 'SHOPIFY' | 'WOOCOMMERCE' | 'DROPAI' | 'OTHERS';
   storeUrl: string;
   status: 'CONNECTED' | 'INTEGRATION_NOT_CONFIGURED' | 'ERROR' | 'SYNCING';
   lastSyncAt: string | null;
@@ -157,6 +157,13 @@ export interface StoreIntegration {
   apiKeyConfigured: boolean;
   currency: string;
   autoFulfillment: boolean;
+  timeConnect?: {
+    mode: 'REAL_TIME' | 'HOURLY' | 'DAILY' | 'CUSTOM';
+    intervalMinutes?: number;
+    lastConnectedAt?: string;
+    latencyMs?: number;
+    status: 'CONNECTED' | 'IDLE';
+  };
 }
 
 export interface OrderItem {
@@ -294,7 +301,11 @@ export interface NotificationItem {
 
 // --- CYBERSECURITY ARCHITECTURE & API SECURITY TYPES ---
 
+export type ApiKeyProvider = 'DROPAI' | 'SHOPIFY' | 'WOOCOMMERCE' | 'SUPPLIER' | 'OTHERS';
+
 export type ApiKeyScope =
+  | 'dropai:cloud'
+  | 'dropai:sync'
   | 'products:read'
   | 'products:write'
   | 'orders:read'
@@ -310,10 +321,21 @@ export type ApiKeyScope =
 
 export type ApiKeyStatus = 'ACTIVE' | 'REVOKED' | 'EXPIRED' | 'DISABLED';
 
+export interface ApiKeyTimeConnect {
+  mode: 'REAL_TIME' | 'HOURLY' | 'DAILY' | 'TIME_BOUND' | 'CUSTOM';
+  windowLabel: string;
+  durationHours?: number;
+  lastConnectedAt?: string | null;
+  connectionLatencyMs?: number;
+  timeToConnectSec?: number;
+  status: 'CONNECTED' | 'STANDBY' | 'DISCONNECTED';
+}
+
 export interface ApiKeyMetadata {
   id: string;
   name: string;
   prefix: string; // e.g. "DAI_live_x8F...2a9c"
+  provider: ApiKeyProvider;
   scopes: ApiKeyScope[];
   status: ApiKeyStatus;
   createdAt: string;
@@ -322,6 +344,7 @@ export interface ApiKeyMetadata {
   usageCount: number;
   environment: 'LIVE' | 'TEST';
   rateLimitPerMin: number;
+  timeConnect: ApiKeyTimeConnect;
 }
 
 export interface CreatedApiKeyResponse {
@@ -391,3 +414,15 @@ export interface SecurityDashboardStatus {
   }[];
   lastAuditAt: string;
 }
+
+export type {
+  CurrencyCode,
+  CurrencyMeta,
+  CurrencyConvertOptions,
+  CurrencyFormatOptions,
+  ConversionResult,
+  ExchangeRateResult,
+  ExchangeRateProvider,
+  CurrencyEventListener,
+} from '../services/currencyService';
+

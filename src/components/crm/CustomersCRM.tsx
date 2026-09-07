@@ -9,8 +9,10 @@ import {
   Sparkles,
   ExternalLink,
   ShieldCheck,
+  ArrowRightLeft,
 } from 'lucide-react';
 import { CustomerProfile } from '../../types';
+import { useCurrency } from '../../hooks/useCurrency';
 
 interface CustomersCRMProps {
   customers: CustomerProfile[];
@@ -23,6 +25,8 @@ export const CustomersCRM: React.FC<CustomersCRMProps> = ({
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [tagFilter, setTagFilter] = useState('ALL');
+  const { format, convertSync, currentCurrency } = useCurrency();
+
   const [reengageFeedback, setReengageFeedback] = useState<string | null>(null);
 
   const tags = ['ALL', 'VIP_LOYAL', 'REPEAT_BUYER', 'FIRST_TIME', 'AT_RISK', 'HIGH_REFUND_RATE'];
@@ -122,7 +126,12 @@ export const CustomersCRM: React.FC<CustomersCRMProps> = ({
         {filtered.map((customer) => {
           const spend = (customer as any).totalSpent ?? customer.lifetimeValue ?? 0;
           const orders = (customer as any).ordersCount ?? customer.totalOrders ?? 0;
-          const currencySymbol = customer.currency === 'INR' ? '₹' : '$';
+          const custCurrency = customer.currency || 'USD';
+          const formattedNativeSpend = format(spend, custCurrency);
+          const isDifferentFromActive = custCurrency.toUpperCase() !== currentCurrency.toUpperCase();
+          const convertedToActive = isDifferentFromActive
+            ? format(convertSync(spend, custCurrency, currentCurrency), currentCurrency)
+            : null;
           const segment = customer.segment || 'REPEAT_BUYER';
           const lastOrder = customer.lastOrderDate || 'Recently active';
           const notes = customer.aiNotes || 'Account active with verified order record.';
@@ -170,8 +179,13 @@ export const CustomersCRM: React.FC<CustomersCRMProps> = ({
                   <div>
                     <div className="text-[10px] text-[#64748B]">LIFETIME VALUE</div>
                     <div className="font-bold text-[#D97706] mt-0.5">
-                      {currencySymbol}{Number(spend).toFixed(2)}
+                      {formattedNativeSpend}
                     </div>
+                    {convertedToActive && (
+                      <div className="text-[9px] text-emerald-400 mt-0.5 truncate" title={`Converted to ${currentCurrency}`}>
+                        ≈ {convertedToActive}
+                      </div>
+                    )}
                   </div>
                   <div>
                     <div className="text-[10px] text-[#64748B]">TOTAL ORDERS</div>

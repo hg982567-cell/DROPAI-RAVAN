@@ -9,8 +9,10 @@ import {
   Sparkles,
   ShieldCheck,
   Zap,
+  Globe,
 } from 'lucide-react';
 import { api } from '../../services/api';
+import { useCurrency } from '../../hooks/useCurrency';
 
 export const PricingEngine: React.FC = () => {
   const [baseCost, setBaseCost] = useState(14.5);
@@ -18,6 +20,8 @@ export const PricingEngine: React.FC = () => {
   const [estimatedCAC, setEstimatedCAC] = useState(12.0);
   const [targetMarginPct, setTargetMarginPct] = useState(52);
   const [pricingResult, setPricingResult] = useState<any>(null);
+  const { convertSync, format, currentCurrency } = useCurrency();
+
 
   useEffect(() => {
     // Run real pricing calculation through backend formula
@@ -213,6 +217,44 @@ export const PricingEngine: React.FC = () => {
                 <div className="flex items-center justify-between text-xs font-mono p-3 rounded-lg bg-[#151517] border border-[#1F1F21]">
                   <span className="text-[#94A3B8]">Break-even Ad ROAS:</span>
                   <span className="text-[#D97706] font-bold">{pricingResult.breakEvenROAS}x</span>
+                </div>
+
+                {/* Multi-Currency Global Selling Prices */}
+                <div className="p-3.5 rounded-lg bg-[#151517] border border-[#1F1F21] space-y-2">
+                  <div className="flex items-center justify-between text-[11px]">
+                    <span className="font-semibold text-slate-300 flex items-center space-x-1.5">
+                      <Globe className="w-3.5 h-3.5 text-amber-400" />
+                      <span>Multi-Currency Retail Prices</span>
+                    </span>
+                    <span className="text-[10px] font-mono text-emerald-400">Auto-Synced</span>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2 text-xs font-mono">
+                    <div className="p-2 rounded bg-[#111113] border border-[#232328] flex justify-between">
+                      <span className="text-[#94A3B8]">🇪🇺 EUR:</span>
+                      <span className="text-white font-bold">
+                        {format(convertSync(pricingResult.recommendedPrice, 'USD', 'EUR'), 'EUR')}
+                      </span>
+                    </div>
+                    <div className="p-2 rounded bg-[#111113] border border-[#232328] flex justify-between">
+                      <span className="text-[#94A3B8]">🇬🇧 GBP:</span>
+                      <span className="text-white font-bold">
+                        {format(convertSync(pricingResult.recommendedPrice, 'USD', 'GBP'), 'GBP')}
+                      </span>
+                    </div>
+                    <div className="p-2 rounded bg-[#111113] border border-[#232328] flex justify-between">
+                      <span className="text-[#94A3B8]">🇮🇳 INR:</span>
+                      <span className="text-white font-bold">
+                        {format(convertSync(pricingResult.recommendedPrice, 'USD', 'INR'), 'INR')}
+                      </span>
+                    </div>
+                    <div className="p-2 rounded bg-[#111113] border border-[#232328] flex justify-between">
+                      <span className="text-[#94A3B8]">🇦🇺 AUD:</span>
+                      <span className="text-white font-bold">
+                        {format(convertSync(pricingResult.recommendedPrice, 'USD', 'AUD'), 'AUD')}
+                      </span>
+                    </div>
+                  </div>
                 </div>
               </div>
 

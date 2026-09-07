@@ -15,6 +15,7 @@ import {
   UserSession,
   ApiKeyMetadata,
   ApiKeyScope,
+  ApiKeyProvider,
   CreatedApiKeyResponse,
   SecurityFinding,
   PenTestResult,
@@ -68,8 +69,11 @@ export const api = {
   async createApiKey(payload: {
     name: string;
     scopes: ApiKeyScope[];
+    provider?: ApiKeyProvider;
     environment?: 'LIVE' | 'TEST';
     expiresInDays?: number;
+    timeConnectMode?: 'REAL_TIME' | 'HOURLY' | 'DAILY' | 'TIME_BOUND' | 'CUSTOM';
+    timeConnectWindow?: string;
   }): Promise<CreatedApiKeyResponse> {
     const res = await fetch('/api/security/keys', {
       method: 'POST',
@@ -226,8 +230,24 @@ export const api = {
     const res = await fetch('/api/stores');
     return res.json();
   },
+  async addStore(storeData: Partial<StoreIntegration> & { apiKey?: string; timeConnect?: any }): Promise<StoreIntegration> {
+    const res = await fetch('/api/stores', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(storeData),
+    });
+    return res.json();
+  },
   async syncStore(id: string) {
     const res = await fetch(`/api/stores/${id}/sync`, { method: 'POST' });
+    return res.json();
+  },
+  async testStoreTimeConnect(id: string) {
+    const res = await fetch(`/api/stores/${id}/time-connect`, { method: 'POST' });
+    return res.json();
+  },
+  async testKeyTimeConnect(id: string) {
+    const res = await fetch(`/api/security/keys/${id}/time-connect`, { method: 'POST' });
     return res.json();
   },
 

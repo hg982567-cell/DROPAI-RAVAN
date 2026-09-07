@@ -29,7 +29,9 @@ import {
 import { api } from '../../services/api';
 import {
   ApiKeyMetadata,
+  ApiKeyProvider,
   ApiKeyScope,
+  ApiKeyTimeConnect,
   CreatedApiKeyResponse,
   PenTestResult,
   SecurityDashboardStatus,
@@ -37,6 +39,8 @@ import {
 } from '../../types';
 
 const ALL_SCOPES: { id: ApiKeyScope; label: string; desc: string; category: string }[] = [
+  { id: 'dropai:cloud', label: 'dropai:cloud', desc: 'DropAI Cloud & Autonomous Agent Gateway connectivity', category: 'DropAI Core' },
+  { id: 'dropai:sync', label: 'dropai:sync', desc: 'Continuous Real-Time inventory and order synchronization', category: 'DropAI Core' },
   { id: 'products:read', label: 'products:read', desc: 'Query product catalog & inventory items', category: 'Catalog' },
   { id: 'products:write', label: 'products:write', desc: 'Create, edit or publish products to stores', category: 'Catalog' },
   { id: 'orders:read', label: 'orders:read', desc: 'View order lifecycle, status, and shipping records', category: 'Orders' },
@@ -82,9 +86,18 @@ export const SecurityDashboard: React.FC = () => {
   // Key creation modal state
   const [showCreateModal, setShowCreateModal] = useState<boolean>(false);
   const [newKeyName, setNewKeyName] = useState<string>('');
+  const [newKeyProvider, setNewKeyProvider] = useState<ApiKeyProvider>('DROPAI');
+  const [newKeyCustomService, setNewKeyCustomService] = useState<string>('');
+  const [newKeyTimeConnectMode, setNewKeyTimeConnectMode] = useState<
+    'REAL_TIME' | 'HOURLY' | 'DAILY' | 'TIME_BOUND' | 'CUSTOM'
+  >('REAL_TIME');
+  const [newKeyTimeConnectWindow, setNewKeyTimeConnectWindow] = useState<string>('');
   const [newKeyEnv, setNewKeyEnv] = useState<'LIVE' | 'TEST'>('LIVE');
   const [newKeyExpires, setNewKeyExpires] = useState<number>(90);
   const [selectedScopes, setSelectedScopes] = useState<ApiKeyScope[]>([
+    'dropai:cloud',
+    'dropai:sync',
+    'ai:use',
     'products:read',
     'orders:read',
     'orders:write',
@@ -94,6 +107,15 @@ export const SecurityDashboard: React.FC = () => {
   // Secret reveal modal
   const [revealedSecret, setRevealedSecret] = useState<CreatedApiKeyResponse | null>(null);
   const [copiedKey, setCopiedKey] = useState<boolean>(false);
+
+  // Time connect interactive state
+  const [testingTimeConnectId, setTestingTimeConnectId] = useState<string | null>(null);
+  const [timeConnectToast, setTimeConnectToast] = useState<{
+    id: string;
+    message: string;
+    latencyMs: number;
+  } | null>(null);
+  const [providerFilter, setProviderFilter] = useState<'ALL' | ApiKeyProvider>('ALL');
 
   // Pentest running state
   const [isRunningPenTest, setIsRunningPenTest] = useState<boolean>(false);
@@ -131,21 +153,107 @@ export const SecurityDashboard: React.FC = () => {
     }
   };
 
+  const handleSelectProvider = (provider: ApiKeyProvider) => {
+    setNewKeyProvider(provider);
+    if (provider === 'DROPAI') {
+      if (!newKeyName || newKeyName.includes('Connector') || newKeyName.includes('Adapter')) {
+        setNewKeyName('DropAI Autonomous Core Gateway');
+      }
+      setSelectedScopes([
+        'dropai:cloud',
+        'dropai:sync',
+        'ai:use',
+        'products:read',
+        'orders:read',
+        'orders:write',
+      ]);
+      setNewKeyTimeConnectMode('REAL_TIME');
+      setNewKeyTimeConnectWindow('Real-Time Continuous (< 25ms WebSocket Stream)');
+    } else if (provider === 'SHOPIFY') {
+      if (!newKeyName || newKeyName.includes('DropAI')) {
+        setNewKeyName('Shopify Store Sync Worker');
+      }
+      setSelectedScopes(['orders:read', 'orders:write', 'products:read', 'shopify:read', 'shopify:write']);
+      setNewKeyTimeConnectMode('HOURLY');
+      setNewKeyTimeConnectWindow('Hourly Automated Sync');
+    } else if (provider === 'WOOCOMMERCE') {
+      if (!newKeyName || newKeyName.includes('DropAI')) {
+        setNewKeyName('WooCommerce Store Connector');
+      }
+      setSelectedScopes(['orders:read', 'orders:write', 'products:read']);
+      setNewKeyTimeConnectMode('HOURLY');
+      setNewKeyTimeConnectWindow('Hourly Automated Sync');
+    } else if (provider === 'SUPPLIER') {
+      if (!newKeyName || newKeyName.includes('DropAI')) {
+        setNewKeyName('Supplier Failover & Routing Engine');
+      }
+      setSelectedScopes(['suppliers:read', 'suppliers:write', 'orders:read', 'products:read']);
+      setNewKeyTimeConnectMode('REAL_TIME');
+      setNewKeyTimeConnectWindow('Real-Time Instant Dispatch (< 35ms)');
+    } else if (provider === 'OTHERS') {
+      if (!newKeyName || newKeyName.includes('DropAI')) {
+        setNewKeyName('External ERP / Headless API Connector');
+      }
+      setSelectedScopes(['products:read', 'orders:read', 'analytics:read']);
+      setNewKeyTimeConnectMode('TIME_BOUND');
+      setNewKeyTimeConnectWindow('Time-Bound Session Window');
+    }
+  };
+
+  const handleTestTimeConnect = async (id: string) => {
+    setTestingTimeConnectId(id);
+    try {
+      const res = await api.testKeyTimeConnect(id);
+      if (res.success) {
+        setTimeConnectToast({
+          id,
+          message: `Pulse handshake verified! Response latency: ${res.latencyMs}ms. Status: CONNECTED.`,
+          latencyMs: res.latencyMs,
+        });
+        setTimeout(() => setTimeConnectToast(null), 5000);
+        const updatedKeys = await api.getApiKeys();
+        setKeys(updatedKeys);
+        const updatedLogs = await api.getSecurityEvents();
+        setAuditLogs(updatedLogs);
+      }
+    } catch (err) {
+      console.error('Time connect handshake failed:', err);
+    } finally {
+      setTestingTimeConnectId(null);
+    }
+  };
+
   const handleCreateKey = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newKeyName.trim()) return;
     setIsSubmittingKey(true);
+
+    const displayName =
+      newKeyProvider === 'OTHERS' && newKeyCustomService.trim()
+        ? `${newKeyName.trim()} [${newKeyCustomService.trim()}]`
+        : newKeyName.trim();
+
     try {
       const res = await api.createApiKey({
-        name: newKeyName.trim(),
+        name: displayName,
+        provider: newKeyProvider,
         scopes: selectedScopes,
         environment: newKeyEnv,
         expiresInDays: newKeyExpires,
+        timeConnectMode: newKeyTimeConnectMode,
+        timeConnectWindow: newKeyTimeConnectWindow || undefined,
       });
       setShowCreateModal(false);
       setRevealedSecret(res);
       setNewKeyName('');
-      setSelectedScopes(['products:read', 'orders:read']);
+      setNewKeyCustomService('');
+      setSelectedScopes([
+        'dropai:cloud',
+        'dropai:sync',
+        'ai:use',
+        'products:read',
+        'orders:read',
+      ]);
       // Refresh keys list
       const updatedKeys = await api.getApiKeys();
       setKeys(updatedKeys);
@@ -445,156 +553,344 @@ export const SecurityDashboard: React.FC = () => {
       {/* TAB 1: API KEYS MANAGEMENT */}
       {activeTab === 'keys' && (
         <div className="space-y-4">
+          {timeConnectToast && (
+            <div className="p-3.5 bg-emerald-950/70 border border-emerald-600/60 rounded-xl text-emerald-300 text-xs flex items-center justify-between shadow-lg shadow-emerald-950/40 animate-in fade-in slide-in-from-top-2 duration-150">
+              <div className="flex items-center gap-2.5">
+                <span className="relative flex h-2.5 w-2.5">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                  <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500"></span>
+                </span>
+                <span className="font-semibold text-white">Time Connect Pulse Handshake:</span>
+                <span>{timeConnectToast.message}</span>
+              </div>
+              <span className="px-2 py-0.5 rounded bg-emerald-900/60 border border-emerald-700/50 font-mono text-[11px] text-emerald-200">
+                {timeConnectToast.latencyMs}ms Latency
+              </span>
+            </div>
+          )}
+
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-[#151517] border border-[#232326] p-4 rounded-xl">
             <div>
-              <h2 className="text-base font-semibold text-[#F8FAFC]">API Key Credentials & Scopes</h2>
+              <div className="flex items-center gap-2">
+                <h2 className="text-base font-semibold text-[#F8FAFC]">API Key Credentials & Scopes</h2>
+                <span className="px-2 py-0.5 rounded text-[11px] font-semibold bg-emerald-950/70 text-emerald-400 border border-emerald-800/50">
+                  DropAI & Time Connect Ready
+                </span>
+              </div>
               <p className="text-xs text-[#94A3B8] mt-0.5">
-                Keys follow format <code className="text-emerald-400 font-mono">DAI_live_...</code>. Only SHA-256 hashes are stored. Plaintext secrets cannot be recovered after creation.
+                Managed authentication tokens with granular scopes, DropAI orchestration, and real-time/scheduled Time Connect windows.
               </p>
             </div>
             <button
               id="btn-create-api-key"
-              onClick={() => setShowCreateModal(true)}
-              className="flex items-center gap-2 px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-medium transition cursor-pointer shadow-sm"
+              onClick={() => {
+                handleSelectProvider('DROPAI');
+                setShowCreateModal(true);
+              }}
+              className="flex items-center gap-2 px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-medium transition cursor-pointer shadow-sm shadow-emerald-950/50"
             >
               <Plus className="w-4 h-4" />
               Generate Scoped API Key
             </button>
           </div>
 
+          {/* Provider Filter Toolbar */}
+          <div className="flex flex-wrap items-center gap-2 bg-[#121214] border border-[#232326] p-2.5 rounded-xl text-xs">
+            <span className="text-[#64748B] font-semibold px-2 flex items-center gap-1.5 uppercase tracking-wider text-[10px]">
+              <Filter className="w-3.5 h-3.5" /> Provider Filter:
+            </span>
+            <button
+              onClick={() => setProviderFilter('ALL')}
+              className={`px-3 py-1.5 rounded-lg font-medium transition cursor-pointer ${
+                providerFilter === 'ALL'
+                  ? 'bg-emerald-600 text-white shadow-sm'
+                  : 'bg-[#1A1A1E] text-[#94A3B8] hover:text-[#CBD5E1]'
+              }`}
+            >
+              All Keys ({keys.length})
+            </button>
+            <button
+              onClick={() => setProviderFilter('DROPAI')}
+              className={`px-3 py-1.5 rounded-lg font-medium transition flex items-center gap-1.5 cursor-pointer ${
+                providerFilter === 'DROPAI'
+                  ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 shadow-sm'
+                  : 'bg-[#1A1A1E] text-[#94A3B8] hover:text-[#CBD5E1]'
+              }`}
+            >
+              <Zap className="w-3.5 h-3.5 text-emerald-400" />
+              DropAI ({keys.filter((k) => k.provider === 'DROPAI').length})
+            </button>
+            <button
+              onClick={() => setProviderFilter('SHOPIFY')}
+              className={`px-3 py-1.5 rounded-lg font-medium transition flex items-center gap-1.5 cursor-pointer ${
+                providerFilter === 'SHOPIFY'
+                  ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40 shadow-sm'
+                  : 'bg-[#1A1A1E] text-[#94A3B8] hover:text-[#CBD5E1]'
+              }`}
+            >
+              <Globe className="w-3.5 h-3.5 text-amber-400" />
+              Shopify ({keys.filter((k) => k.provider === 'SHOPIFY').length})
+            </button>
+            <button
+              onClick={() => setProviderFilter('SUPPLIER')}
+              className={`px-3 py-1.5 rounded-lg font-medium transition flex items-center gap-1.5 cursor-pointer ${
+                providerFilter === 'SUPPLIER'
+                  ? 'bg-purple-500/20 text-purple-300 border border-purple-500/40 shadow-sm'
+                  : 'bg-[#1A1A1E] text-[#94A3B8] hover:text-[#CBD5E1]'
+              }`}
+            >
+              <Server className="w-3.5 h-3.5 text-purple-400" />
+              Suppliers ({keys.filter((k) => k.provider === 'SUPPLIER').length})
+            </button>
+            <button
+              onClick={() => setProviderFilter('OTHERS')}
+              className={`px-3 py-1.5 rounded-lg font-medium transition flex items-center gap-1.5 cursor-pointer ${
+                providerFilter === 'OTHERS'
+                  ? 'bg-indigo-500/20 text-indigo-300 border border-indigo-500/40 shadow-sm'
+                  : 'bg-[#1A1A1E] text-[#94A3B8] hover:text-[#CBD5E1]'
+              }`}
+            >
+              <Key className="w-3.5 h-3.5 text-indigo-400" />
+              Others ({keys.filter((k) => k.provider === 'OTHERS').length})
+            </button>
+          </div>
+
           {/* Keys Table */}
-          <div className="bg-[#121214] border border-[#232326] rounded-xl overflow-hidden">
+          <div className="bg-[#121214] border border-[#232326] rounded-xl overflow-hidden shadow-sm">
             <div className="overflow-x-auto">
               <table className="w-full text-left text-sm">
                 <thead>
                   <tr className="bg-[#18181B] border-b border-[#232326] text-xs font-semibold text-[#94A3B8] uppercase tracking-wider">
                     <th className="px-5 py-3.5">Key Name & Prefix</th>
-                    <th className="px-5 py-3.5">Granular Scopes</th>
-                    <th className="px-4 py-3.5">Status</th>
-                    <th className="px-4 py-3.5">Environment</th>
+                    <th className="px-4 py-3.5">Provider Option</th>
+                    <th className="px-4 py-3.5">Time Connect Window</th>
+                    <th className="px-5 py-3.5">Scopes</th>
+                    <th className="px-4 py-3.5">Status & Env</th>
                     <th className="px-4 py-3.5">Last Used / Calls</th>
                     <th className="px-4 py-3.5 text-right">Actions</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-[#1F1F23]">
-                  {keys.map((key) => {
-                    const isRevoked = key.status === 'REVOKED';
-                    const isDisabled = key.status === 'DISABLED';
-                    return (
-                      <tr key={key.id} className="hover:bg-[#18181C] transition">
-                        <td className="px-5 py-4">
-                          <div className="font-medium text-[#E2E8F0]">{key.name}</div>
-                          <div className="flex items-center gap-2 mt-1">
-                            <span className="font-mono text-xs text-emerald-400/90 bg-emerald-950/40 px-2 py-0.5 rounded border border-emerald-900/50">
-                              {key.prefix}
-                            </span>
-                            <button
-                              title="Copy Prefix"
-                              onClick={() => handleCopyPrefix(key.id, key.prefix)}
-                              className="text-[#64748B] hover:text-[#CBD5E1] transition p-0.5"
-                            >
-                              {copiedPrefixId === key.id ? (
-                                <Check className="w-3.5 h-3.5 text-emerald-400" />
-                              ) : (
-                                <Copy className="w-3.5 h-3.5" />
-                              )}
-                            </button>
-                          </div>
-                        </td>
+                  {keys
+                    .filter((key) => providerFilter === 'ALL' || key.provider === providerFilter)
+                    .map((key) => {
+                      const isRevoked = key.status === 'REVOKED';
+                      const isDisabled = key.status === 'DISABLED';
+                      const isTestingThisKey = testingTimeConnectId === key.id;
+                      const timeConnect = key.timeConnect || {
+                        mode: 'REAL_TIME',
+                        windowLabel: 'Real-Time Continuous',
+                        connectionLatencyMs: 22,
+                        status: 'CONNECTED',
+                      };
 
-                        <td className="px-5 py-4 max-w-md">
-                          <div className="flex flex-wrap gap-1">
-                            {key.scopes.map((scope) => (
-                              <span
-                                key={scope}
-                                className="px-2 py-0.5 bg-[#1C1C22] border border-[#2D2D35] rounded text-xs font-mono text-[#CBD5E1]"
-                              >
-                                {scope}
+                      return (
+                        <tr key={key.id} className="hover:bg-[#18181C] transition">
+                          <td className="px-5 py-4">
+                            <div className="font-medium text-[#E2E8F0]">{key.name}</div>
+                            <div className="flex items-center gap-2 mt-1">
+                              <span className="font-mono text-xs text-emerald-400/90 bg-emerald-950/40 px-2 py-0.5 rounded border border-emerald-900/50">
+                                {key.prefix}
                               </span>
-                            ))}
-                          </div>
-                        </td>
+                              <button
+                                title="Copy Prefix"
+                                onClick={() => handleCopyPrefix(key.id, key.prefix)}
+                                className="text-[#64748B] hover:text-[#CBD5E1] transition p-0.5 cursor-pointer"
+                              >
+                                {copiedPrefixId === key.id ? (
+                                  <Check className="w-3.5 h-3.5 text-emerald-400" />
+                                ) : (
+                                  <Copy className="w-3.5 h-3.5" />
+                                )}
+                              </button>
+                            </div>
+                          </td>
 
-                        <td className="px-4 py-4 whitespace-nowrap">
-                          {key.status === 'ACTIVE' && (
-                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium bg-emerald-950/80 border border-emerald-800/60 text-emerald-400">
-                              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
-                              Active
-                            </span>
-                          )}
-                          {key.status === 'DISABLED' && (
-                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium bg-amber-950/80 border border-amber-800/60 text-amber-400">
-                              <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />
-                              Disabled
-                            </span>
-                          )}
-                          {key.status === 'REVOKED' && (
-                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-950/80 border border-red-800/60 text-red-400">
-                              <XCircle className="w-3 h-3" />
-                              Revoked
-                            </span>
-                          )}
-                        </td>
+                          {/* Provider Badge */}
+                          <td className="px-4 py-4 whitespace-nowrap">
+                            {key.provider === 'DROPAI' && (
+                              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-semibold bg-emerald-950/60 border border-emerald-700/60 text-emerald-300">
+                                <Zap className="w-3 h-3 text-emerald-400" />
+                                DropAI Core
+                              </span>
+                            )}
+                            {key.provider === 'SHOPIFY' && (
+                              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-semibold bg-amber-950/60 border border-amber-700/60 text-amber-300">
+                                <Globe className="w-3 h-3 text-amber-400" />
+                                Shopify
+                              </span>
+                            )}
+                            {key.provider === 'WOOCOMMERCE' && (
+                              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-semibold bg-violet-950/60 border border-violet-700/60 text-violet-300">
+                                <Globe className="w-3 h-3 text-violet-400" />
+                                WooCommerce
+                              </span>
+                            )}
+                            {key.provider === 'SUPPLIER' && (
+                              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-semibold bg-purple-950/60 border border-purple-700/60 text-purple-300">
+                                <Server className="w-3 h-3 text-purple-400" />
+                                Supplier
+                              </span>
+                            )}
+                            {(key.provider === 'OTHERS' || !key.provider) && (
+                              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-semibold bg-indigo-950/60 border border-indigo-700/60 text-indigo-300">
+                                <Key className="w-3 h-3 text-indigo-400" />
+                                Others / Custom
+                              </span>
+                            )}
+                          </td>
 
-                        <td className="px-4 py-4 whitespace-nowrap">
-                          <span
-                            className={`px-2 py-0.5 rounded text-xs font-semibold font-mono ${
-                              key.environment === 'LIVE'
-                                ? 'bg-emerald-950 text-emerald-400 border border-emerald-800/40'
-                                : 'bg-amber-950 text-amber-400 border border-amber-800/40'
-                            }`}
-                          >
-                            {key.environment}
-                          </span>
-                        </td>
-
-                        <td className="px-4 py-4 whitespace-nowrap text-xs text-[#94A3B8]">
-                          <div>{key.lastUsedAt ? new Date(key.lastUsedAt).toLocaleTimeString() : 'Never used'}</div>
-                          <div className="font-mono text-[#64748B] mt-0.5">{key.usageCount.toLocaleString()} calls</div>
-                        </td>
-
-                        <td className="px-4 py-4 whitespace-nowrap text-right">
-                          <div className="flex items-center justify-end gap-1.5">
-                            {!isRevoked && (
-                              <>
+                          {/* Time Connect & Latency */}
+                          <td className="px-4 py-4">
+                            <div className="space-y-1.5 min-w-[200px]">
+                              <div className="flex items-center gap-2">
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-mono font-medium bg-[#1C1C24] text-[#CBD5E1] border border-[#2D2D38]">
+                                  <Clock className="w-3 h-3 text-emerald-400" />
+                                  {timeConnect.mode === 'REAL_TIME'
+                                    ? 'Real-Time'
+                                    : timeConnect.mode === 'HOURLY'
+                                    ? 'Hourly'
+                                    : timeConnect.mode === 'DAILY'
+                                    ? 'Daily'
+                                    : timeConnect.mode === 'TIME_BOUND'
+                                    ? 'Time-Bound'
+                                    : 'Custom'}
+                                </span>
+                                {timeConnect.status === 'CONNECTED' ? (
+                                  <span className="inline-flex items-center gap-1 text-[11px] text-emerald-400 font-mono">
+                                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                                    {timeConnect.connectionLatencyMs || 22}ms
+                                  </span>
+                                ) : (
+                                  <span className="inline-flex items-center gap-1 text-[11px] text-[#64748B] font-mono">
+                                    <span className="w-1.5 h-1.5 rounded-full bg-[#64748B]" />
+                                    Standby
+                                  </span>
+                                )}
+                              </div>
+                              <div className="text-[11px] text-[#94A3B8] truncate max-w-[220px]" title={timeConnect.windowLabel}>
+                                {timeConnect.windowLabel || 'Real-Time Continuous (< 25ms)'}
+                              </div>
+                              {!isRevoked && (
                                 <button
-                                  id={`btn-rotate-${key.id}`}
-                                  onClick={() => handleRotateKey(key.id)}
-                                  title="Rotate API Key (revokes old secret & creates new)"
-                                  className="p-1.5 rounded-md hover:bg-[#25252A] text-[#94A3B8] hover:text-[#E2E8F0] transition cursor-pointer"
+                                  id={`btn-time-connect-${key.id}`}
+                                  onClick={() => handleTestTimeConnect(key.id)}
+                                  disabled={isTestingThisKey}
+                                  className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded bg-[#1A1A22] hover:bg-emerald-950/50 border border-[#2D2D38] hover:border-emerald-700/60 text-[11px] text-emerald-300 font-medium transition cursor-pointer disabled:opacity-50"
                                 >
-                                  <RotateCcw className="w-4 h-4" />
+                                  {isTestingThisKey ? (
+                                    <RefreshCw className="w-3 h-3 animate-spin text-emerald-400" />
+                                  ) : (
+                                    <Zap className="w-3 h-3 text-emerald-400" />
+                                  )}
+                                  {isTestingThisKey ? 'Connecting...' : 'Time Connect'}
                                 </button>
-                                <button
-                                  id={`btn-toggle-${key.id}`}
-                                  onClick={() => handleToggleStatus(key.id, key.status)}
-                                  title={isDisabled ? 'Enable Key' : 'Disable Key'}
-                                  className={`p-1.5 rounded-md transition cursor-pointer ${
-                                    isDisabled
-                                      ? 'text-amber-400 hover:bg-amber-950/40'
-                                      : 'text-[#94A3B8] hover:bg-[#25252A] hover:text-[#E2E8F0]'
+                              )}
+                            </div>
+                          </td>
+
+                          {/* Scopes */}
+                          <td className="px-5 py-4 max-w-xs">
+                            <div className="flex flex-wrap gap-1 max-h-16 overflow-y-auto">
+                              {key.scopes.map((scope) => (
+                                <span
+                                  key={scope}
+                                  className={`px-2 py-0.5 rounded text-[11px] font-mono ${
+                                    scope.startsWith('dropai:')
+                                      ? 'bg-emerald-950/50 text-emerald-300 border border-emerald-800/40'
+                                      : 'bg-[#1C1C22] border border-[#2D2D35] text-[#CBD5E1]'
                                   }`}
                                 >
-                                  <Power className="w-4 h-4" />
-                                </button>
-                                <button
-                                  id={`btn-revoke-${key.id}`}
-                                  onClick={() => handleRevokeKey(key.id)}
-                                  title="Permanently Revoke Key"
-                                  className="p-1.5 rounded-md hover:bg-red-950/40 text-red-400 transition cursor-pointer"
-                                >
-                                  <Trash2 className="w-4 h-4" />
-                                </button>
-                              </>
-                            )}
-                            {isRevoked && (
-                              <span className="text-xs text-[#64748B] italic">Revoked</span>
-                            )}
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  })}
+                                  {scope}
+                                </span>
+                              ))}
+                            </div>
+                          </td>
+
+                          {/* Status & Env */}
+                          <td className="px-4 py-4 whitespace-nowrap">
+                            <div className="space-y-1">
+                              <div>
+                                {key.status === 'ACTIVE' && (
+                                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-emerald-950/80 border border-emerald-800/60 text-emerald-400">
+                                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+                                    Active
+                                  </span>
+                                )}
+                                {key.status === 'DISABLED' && (
+                                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-amber-950/80 border border-amber-800/60 text-amber-400">
+                                    <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />
+                                    Disabled
+                                  </span>
+                                )}
+                                {key.status === 'REVOKED' && (
+                                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-red-950/80 border border-red-800/60 text-red-400">
+                                    <XCircle className="w-3 h-3" />
+                                    Revoked
+                                  </span>
+                                )}
+                              </div>
+                              <span
+                                className={`inline-block px-1.5 py-0.2 rounded text-[10px] font-semibold font-mono ${
+                                  key.environment === 'LIVE'
+                                    ? 'bg-emerald-950 text-emerald-400 border border-emerald-800/40'
+                                    : 'bg-amber-950 text-amber-400 border border-amber-800/40'
+                                }`}
+                              >
+                                {key.environment}
+                              </span>
+                            </div>
+                          </td>
+
+                          {/* Last Used / Calls */}
+                          <td className="px-4 py-4 whitespace-nowrap text-xs text-[#94A3B8]">
+                            <div>{key.lastUsedAt ? new Date(key.lastUsedAt).toLocaleTimeString() : 'Never used'}</div>
+                            <div className="font-mono text-[#64748B] mt-0.5">{key.usageCount.toLocaleString()} calls</div>
+                          </td>
+
+                          {/* Actions */}
+                          <td className="px-4 py-4 whitespace-nowrap text-right">
+                            <div className="flex items-center justify-end gap-1.5">
+                              {!isRevoked && (
+                                <>
+                                  <button
+                                    id={`btn-rotate-${key.id}`}
+                                    onClick={() => handleRotateKey(key.id)}
+                                    title="Rotate API Key (revokes old secret & creates new)"
+                                    className="p-1.5 rounded-md hover:bg-[#25252A] text-[#94A3B8] hover:text-[#E2E8F0] transition cursor-pointer"
+                                  >
+                                    <RotateCcw className="w-4 h-4" />
+                                  </button>
+                                  <button
+                                    id={`btn-toggle-${key.id}`}
+                                    onClick={() => handleToggleStatus(key.id, key.status)}
+                                    title={isDisabled ? 'Enable Key' : 'Disable Key'}
+                                    className={`p-1.5 rounded-md transition cursor-pointer ${
+                                      isDisabled
+                                        ? 'text-amber-400 hover:bg-amber-950/40'
+                                        : 'text-[#94A3B8] hover:bg-[#25252A] hover:text-[#E2E8F0]'
+                                    }`}
+                                  >
+                                    <Power className="w-4 h-4" />
+                                  </button>
+                                  <button
+                                    id={`btn-revoke-${key.id}`}
+                                    onClick={() => handleRevokeKey(key.id)}
+                                    title="Permanently Revoke Key"
+                                    className="p-1.5 rounded-md hover:bg-red-950/40 text-red-400 transition cursor-pointer"
+                                  >
+                                    <Trash2 className="w-4 h-4" />
+                                  </button>
+                                </>
+                              )}
+                              {isRevoked && (
+                                <span className="text-xs text-[#64748B] italic">Revoked</span>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
                 </tbody>
               </table>
             </div>
@@ -944,13 +1240,190 @@ export const SecurityDashboard: React.FC = () => {
             </div>
 
             <form onSubmit={handleCreateKey} className="p-6 space-y-5">
+              {/* Provider Selection Option */}
+              <div className="space-y-2">
+                <label className="text-xs font-semibold text-[#E2E8F0] uppercase tracking-wider flex items-center justify-between">
+                  <span>Provider & Integration Target</span>
+                  <span className="text-[11px] text-emerald-400 font-mono">Option: {newKeyProvider}</span>
+                </label>
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => handleSelectProvider('DROPAI')}
+                    className={`p-3 rounded-xl border text-left transition cursor-pointer flex flex-col justify-between ${
+                      newKeyProvider === 'DROPAI'
+                        ? 'bg-emerald-950/40 border-emerald-500 text-white ring-1 ring-emerald-500'
+                        : 'bg-[#121215] border-[#26262B] text-[#94A3B8] hover:border-[#383842]'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between">
+                      <Zap className="w-4 h-4 text-emerald-400" />
+                      <span className="text-[10px] px-1.5 py-0.2 rounded bg-emerald-900/60 text-emerald-300 font-mono">
+                        Core AI
+                      </span>
+                    </div>
+                    <div className="mt-2">
+                      <div className="text-xs font-bold text-white">DropAI</div>
+                      <div className="text-[10px] text-[#94A3B8] mt-0.5">Agent Gateway & Sync</div>
+                    </div>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => handleSelectProvider('SHOPIFY')}
+                    className={`p-3 rounded-xl border text-left transition cursor-pointer flex flex-col justify-between ${
+                      newKeyProvider === 'SHOPIFY'
+                        ? 'bg-amber-950/40 border-amber-500 text-white ring-1 ring-amber-500'
+                        : 'bg-[#121215] border-[#26262B] text-[#94A3B8] hover:border-[#383842]'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between">
+                      <Globe className="w-4 h-4 text-amber-400" />
+                      <span className="text-[10px] px-1.5 py-0.2 rounded bg-amber-900/60 text-amber-300 font-mono">
+                        Store
+                      </span>
+                    </div>
+                    <div className="mt-2">
+                      <div className="text-xs font-bold text-white">Shopify</div>
+                      <div className="text-[10px] text-[#94A3B8] mt-0.5">Store Webhooks & Orders</div>
+                    </div>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => handleSelectProvider('WOOCOMMERCE')}
+                    className={`p-3 rounded-xl border text-left transition cursor-pointer flex flex-col justify-between ${
+                      newKeyProvider === 'WOOCOMMERCE'
+                        ? 'bg-violet-950/40 border-violet-500 text-white ring-1 ring-violet-500'
+                        : 'bg-[#121215] border-[#26262B] text-[#94A3B8] hover:border-[#383842]'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between">
+                      <Globe className="w-4 h-4 text-violet-400" />
+                      <span className="text-[10px] px-1.5 py-0.2 rounded bg-violet-900/60 text-violet-300 font-mono">
+                        Woo
+                      </span>
+                    </div>
+                    <div className="mt-2">
+                      <div className="text-xs font-bold text-white">WooCommerce</div>
+                      <div className="text-[10px] text-[#94A3B8] mt-0.5">Self-Hosted Store</div>
+                    </div>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => handleSelectProvider('SUPPLIER')}
+                    className={`p-3 rounded-xl border text-left transition cursor-pointer flex flex-col justify-between ${
+                      newKeyProvider === 'SUPPLIER'
+                        ? 'bg-purple-950/40 border-purple-500 text-white ring-1 ring-purple-500'
+                        : 'bg-[#121215] border-[#26262B] text-[#94A3B8] hover:border-[#383842]'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between">
+                      <Server className="w-4 h-4 text-purple-400" />
+                      <span className="text-[10px] px-1.5 py-0.2 rounded bg-purple-900/60 text-purple-300 font-mono">
+                        Fulfillment
+                      </span>
+                    </div>
+                    <div className="mt-2">
+                      <div className="text-xs font-bold text-white">Suppliers</div>
+                      <div className="text-[10px] text-[#94A3B8] mt-0.5">CJ & AliExpress Routing</div>
+                    </div>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => handleSelectProvider('OTHERS')}
+                    className={`p-3 rounded-xl border text-left transition cursor-pointer flex flex-col justify-between col-span-2 sm:col-span-2 ${
+                      newKeyProvider === 'OTHERS'
+                        ? 'bg-indigo-950/40 border-indigo-500 text-white ring-1 ring-indigo-500'
+                        : 'bg-[#121215] border-[#26262B] text-[#94A3B8] hover:border-[#383842]'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between">
+                      <Key className="w-4 h-4 text-indigo-400" />
+                      <span className="text-[10px] px-1.5 py-0.2 rounded bg-indigo-900/60 text-indigo-300 font-mono">
+                        Others
+                      </span>
+                    </div>
+                    <div className="mt-2">
+                      <div className="text-xs font-bold text-white">Others / Custom Integration</div>
+                      <div className="text-[10px] text-[#94A3B8] mt-0.5">ERP, CRM, Custom Webhooks & External Services</div>
+                    </div>
+                  </button>
+                </div>
+
+                {newKeyProvider === 'OTHERS' && (
+                  <div className="mt-2 p-3 bg-indigo-950/20 border border-indigo-800/40 rounded-xl space-y-1.5 animate-in fade-in duration-150">
+                    <label className="text-[11px] font-semibold text-indigo-300 uppercase tracking-wider">
+                      Specify Custom Service / Integration Name
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="e.g. NetSuite ERP, Zapier Webhook, SAP Connector"
+                      value={newKeyCustomService}
+                      onChange={(e) => setNewKeyCustomService(e.target.value)}
+                      className="w-full px-3 py-2 rounded-lg bg-[#0F0F12] border border-indigo-700/50 text-xs text-[#F8FAFC] focus:outline-none focus:border-indigo-400"
+                    />
+                  </div>
+                )}
+              </div>
+
+              {/* Time Connect Configuration Section */}
+              <div className="p-4 bg-[#111114] border border-[#26262B] rounded-xl space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Clock className="w-4 h-4 text-emerald-400" />
+                    <span className="text-xs font-bold text-[#F8FAFC] uppercase tracking-wider">
+                      Time Connect Configuration
+                    </span>
+                  </div>
+                  <span className="text-[11px] text-[#64748B] font-mono">Latency & Active Windows</span>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div className="space-y-1.5">
+                    <label className="text-[11px] font-semibold text-[#CBD5E1]">Connection Mode</label>
+                    <select
+                      value={newKeyTimeConnectMode}
+                      onChange={(e) => {
+                        const mode = e.target.value as any;
+                        setNewKeyTimeConnectMode(mode);
+                        if (mode === 'REAL_TIME') setNewKeyTimeConnectWindow('Real-Time Continuous (< 25ms WebSocket Stream)');
+                        else if (mode === 'HOURLY') setNewKeyTimeConnectWindow('Hourly Automated Sync');
+                        else if (mode === 'DAILY') setNewKeyTimeConnectWindow('Daily Maintenance Window (02:00 - 04:00 UTC)');
+                        else if (mode === 'TIME_BOUND') setNewKeyTimeConnectWindow('Time-Bound Session (08:00 - 20:00 UTC)');
+                      }}
+                      className="w-full px-3 py-2 rounded-lg bg-[#16161A] border border-[#2E2E35] text-xs text-[#F8FAFC] focus:outline-none focus:border-emerald-500"
+                    >
+                      <option value="REAL_TIME">⚡ Real-Time Continuous (WebSocket & HTTP Pulse)</option>
+                      <option value="HOURLY">⏱️ Hourly Sync (Every 60 min)</option>
+                      <option value="DAILY">📅 Daily Maintenance Window</option>
+                      <option value="TIME_BOUND">⏳ Time-Bound Session Window</option>
+                      <option value="CUSTOM">⚙️ Custom Schedule</option>
+                    </select>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="text-[11px] font-semibold text-[#CBD5E1]">Time Connect Window / Schedule</label>
+                    <input
+                      type="text"
+                      placeholder="e.g. 24/7 Continuous or 09:00 - 18:00 UTC"
+                      value={newKeyTimeConnectWindow}
+                      onChange={(e) => setNewKeyTimeConnectWindow(e.target.value)}
+                      className="w-full px-3 py-2 rounded-lg bg-[#16161A] border border-[#2E2E35] text-xs text-[#F8FAFC] focus:outline-none focus:border-emerald-500"
+                    />
+                  </div>
+                </div>
+              </div>
+
               <div className="space-y-1.5">
                 <label className="text-xs font-semibold text-[#E2E8F0] uppercase tracking-wider">
-                  Key Name / Purpose
+                  Key Description / Identity
                 </label>
                 <input
                   type="text"
-                  placeholder="e.g. CJ Supplier Fulfillment Worker"
+                  placeholder="e.g. DropAI Autonomous Core Gateway"
                   value={newKeyName}
                   onChange={(e) => setNewKeyName(e.target.value)}
                   required

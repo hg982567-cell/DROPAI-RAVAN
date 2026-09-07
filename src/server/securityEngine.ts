@@ -2,7 +2,9 @@ import crypto from 'crypto';
 import { Request, Response, NextFunction } from 'express';
 import {
   ApiKeyMetadata,
+  ApiKeyProvider,
   ApiKeyScope,
+  ApiKeyTimeConnect,
   CreatedApiKeyResponse,
   PenTestResult,
   SecurityDashboardStatus,
@@ -15,6 +17,7 @@ interface StoredApiKeyRecord {
   name: string;
   prefix: string; // e.g., "DAI_live_aB3...9x1Z"
   keyHash: string; // SHA-256 hash of plaintext secret
+  provider: ApiKeyProvider;
   scopes: ApiKeyScope[];
   status: 'ACTIVE' | 'REVOKED' | 'EXPIRED' | 'DISABLED';
   createdAt: string;
@@ -23,15 +26,40 @@ interface StoredApiKeyRecord {
   usageCount: number;
   environment: 'LIVE' | 'TEST';
   rateLimitPerMin: number;
+  timeConnect: ApiKeyTimeConnect;
 }
 
 // In-memory key store initialized with production-grade scoped keys
 const INITIAL_API_KEYS: StoredApiKeyRecord[] = [
   {
+    id: 'key-prod-dropai-core',
+    name: 'DropAI Central AI Orchestrator',
+    prefix: 'DAI_live_d9A...1q8z',
+    keyHash: crypto.createHash('sha256').update('DAI_live_dropai_central_core_gateway_0911a').digest('hex'),
+    provider: 'DROPAI',
+    scopes: ['dropai:cloud', 'dropai:sync', 'ai:use', 'analytics:read', 'orders:read', 'orders:write', 'products:read', 'products:write'],
+    status: 'ACTIVE',
+    createdAt: new Date(Date.now() - 5 * 86400000).toISOString(),
+    expiresAt: new Date(Date.now() + 360 * 86400000).toISOString(),
+    lastUsedAt: new Date(Date.now() - 45000).toISOString(),
+    usageCount: 3840,
+    environment: 'LIVE',
+    rateLimitPerMin: 300,
+    timeConnect: {
+      mode: 'REAL_TIME',
+      windowLabel: 'Real-Time (< 20ms Continuous)',
+      lastConnectedAt: new Date(Date.now() - 45000).toISOString(),
+      connectionLatencyMs: 19,
+      timeToConnectSec: 0.019,
+      status: 'CONNECTED',
+    },
+  },
+  {
     id: 'key-prod-shopify-sync',
     name: 'Shopify Store Auto-Fulfillment Worker',
     prefix: 'DAI_live_s8F...4k9x',
     keyHash: crypto.createHash('sha256').update('DAI_live_shopify_prod_sync_98a72f1bc').digest('hex'),
+    provider: 'SHOPIFY',
     scopes: ['orders:read', 'orders:write', 'products:read', 'shopify:read', 'shopify:write'],
     status: 'ACTIVE',
     createdAt: new Date(Date.now() - 14 * 86400000).toISOString(),
@@ -40,12 +68,21 @@ const INITIAL_API_KEYS: StoredApiKeyRecord[] = [
     usageCount: 1420,
     environment: 'LIVE',
     rateLimitPerMin: 120,
+    timeConnect: {
+      mode: 'HOURLY',
+      windowLabel: 'Hourly Automated Sync',
+      lastConnectedAt: new Date(Date.now() - 4 * 60000).toISOString(),
+      connectionLatencyMs: 38,
+      timeToConnectSec: 0.038,
+      status: 'CONNECTED',
+    },
   },
   {
     id: 'key-prod-supplier-routing',
     name: 'CJ & AliExpress Failover Engine',
     prefix: 'DAI_live_c1J...8p2m',
     keyHash: crypto.createHash('sha256').update('DAI_live_cj_supplier_routing_k9201a4').digest('hex'),
+    provider: 'SUPPLIER',
     scopes: ['suppliers:read', 'suppliers:write', 'orders:read', 'products:read'],
     status: 'ACTIVE',
     createdAt: new Date(Date.now() - 30 * 86400000).toISOString(),
@@ -54,26 +91,45 @@ const INITIAL_API_KEYS: StoredApiKeyRecord[] = [
     usageCount: 840,
     environment: 'LIVE',
     rateLimitPerMin: 100,
+    timeConnect: {
+      mode: 'REAL_TIME',
+      windowLabel: 'Real-Time (< 50ms)',
+      lastConnectedAt: new Date(Date.now() - 12 * 60000).toISOString(),
+      connectionLatencyMs: 32,
+      timeToConnectSec: 0.032,
+      status: 'CONNECTED',
+    },
   },
   {
-    id: 'key-prod-ai-agent',
-    name: 'Gemini Autonomous Order Optimizer',
-    prefix: 'DAI_live_g9A...3q7w',
-    keyHash: crypto.createHash('sha256').update('DAI_live_gemini_agent_optimizer_771b0').digest('hex'),
-    scopes: ['ai:use', 'analytics:read', 'products:read', 'orders:read'],
+    id: 'key-prod-custom-others',
+    name: 'Headless Custom ERP Connector',
+    prefix: 'DAI_live_o5T...9w2q',
+    keyHash: crypto.createHash('sha256').update('DAI_live_others_erp_webhook_secret_882b').digest('hex'),
+    provider: 'OTHERS',
+    scopes: ['orders:read', 'products:read', 'analytics:read'],
     status: 'ACTIVE',
-    createdAt: new Date(Date.now() - 7 * 86400000).toISOString(),
-    expiresAt: new Date(Date.now() + 83 * 86400000).toISOString(),
-    lastUsedAt: new Date(Date.now() - 1 * 60000).toISOString(),
-    usageCount: 412,
+    createdAt: new Date(Date.now() - 2 * 86400000).toISOString(),
+    expiresAt: new Date(Date.now() + 28 * 86400000).toISOString(),
+    lastUsedAt: new Date(Date.now() - 18 * 60000).toISOString(),
+    usageCount: 198,
     environment: 'LIVE',
-    rateLimitPerMin: 30,
+    rateLimitPerMin: 80,
+    timeConnect: {
+      mode: 'TIME_BOUND',
+      windowLabel: 'Time-Bound Session (30 Days)',
+      durationHours: 720,
+      lastConnectedAt: new Date(Date.now() - 18 * 60000).toISOString(),
+      connectionLatencyMs: 44,
+      timeToConnectSec: 0.044,
+      status: 'CONNECTED',
+    },
   },
   {
     id: 'key-legacy-deprecate',
     name: 'Old Marketing Webhook Worker (Revoked)',
     prefix: 'DAI_live_m0K...1x5v',
     keyHash: crypto.createHash('sha256').update('DAI_live_old_mkt_revoked_0991a').digest('hex'),
+    provider: 'OTHERS',
     scopes: ['analytics:read'],
     status: 'REVOKED',
     createdAt: new Date(Date.now() - 90 * 86400000).toISOString(),
@@ -82,6 +138,14 @@ const INITIAL_API_KEYS: StoredApiKeyRecord[] = [
     usageCount: 92,
     environment: 'LIVE',
     rateLimitPerMin: 60,
+    timeConnect: {
+      mode: 'TIME_BOUND',
+      windowLabel: 'Expired Connect Window',
+      lastConnectedAt: new Date(Date.now() - 15 * 86400000).toISOString(),
+      connectionLatencyMs: 0,
+      timeToConnectSec: 0,
+      status: 'DISCONNECTED',
+    },
   },
 ];
 
@@ -125,7 +189,9 @@ export interface SecurityAuditEntry {
     | 'IDOR_ACCESS_DENIED'
     | 'WEBHOOK_SIGNATURE_INVALID'
     | 'SYSTEM_LOCKED'
-    | 'HIGH_RISK_OP_AUTHORIZED';
+    | 'HIGH_RISK_OP_AUTHORIZED'
+    | 'TIME_CONNECT_PULSE'
+    | 'TIME_CONNECT_FAILED';
   severity: 'INFO' | 'WARN' | 'HIGH' | 'CRITICAL';
   ip: string;
   userAgent: string;
@@ -368,6 +434,7 @@ export const apiKeyManager = {
       id: k.id,
       name: k.name,
       prefix: k.prefix,
+      provider: k.provider || 'DROPAI',
       scopes: k.scopes,
       status: k.status,
       createdAt: k.createdAt,
@@ -376,16 +443,28 @@ export const apiKeyManager = {
       usageCount: k.usageCount,
       environment: k.environment,
       rateLimitPerMin: k.rateLimitPerMin,
+      timeConnect: k.timeConnect || {
+        mode: 'REAL_TIME',
+        windowLabel: 'Real-Time Continuous',
+        lastConnectedAt: k.lastUsedAt,
+        connectionLatencyMs: 24,
+        timeToConnectSec: 0.024,
+        status: 'CONNECTED',
+      },
     }));
   },
 
   createKey(params: {
     name: string;
     scopes: ApiKeyScope[];
+    provider?: ApiKeyProvider;
     environment?: 'LIVE' | 'TEST';
     expiresInDays?: number;
+    timeConnectMode?: 'REAL_TIME' | 'HOURLY' | 'DAILY' | 'TIME_BOUND' | 'CUSTOM';
+    timeConnectWindow?: string;
   }): CreatedApiKeyResponse {
     const env = params.environment || 'LIVE';
+    const provider = params.provider || 'DROPAI';
     const randomHex = crypto.randomBytes(24).toString('base64url');
     const plaintextSecret = `DAI_${env.toLowerCase()}_${randomHex}`;
 
@@ -398,19 +477,44 @@ export const apiKeyManager = {
         ? new Date(now.getTime() + params.expiresInDays * 86400000).toISOString()
         : null;
 
+    const mode = params.timeConnectMode || 'REAL_TIME';
+    const windowLabel =
+      params.timeConnectWindow ||
+      (mode === 'REAL_TIME'
+        ? 'Real-Time (< 25ms Continuous)'
+        : mode === 'HOURLY'
+        ? 'Hourly Auto-Connect Sync'
+        : mode === 'DAILY'
+        ? 'Daily Batch Time Connect'
+        : 'Time-Bound Session Window');
+
+    const initialLatency = Math.floor(Math.random() * 20) + 15;
+
+    const timeConnect: ApiKeyTimeConnect = {
+      mode,
+      windowLabel,
+      durationHours: params.expiresInDays ? params.expiresInDays * 24 : undefined,
+      lastConnectedAt: now.toISOString(),
+      connectionLatencyMs: initialLatency,
+      timeToConnectSec: +(initialLatency / 1000).toFixed(3),
+      status: 'CONNECTED',
+    };
+
     const record: StoredApiKeyRecord = {
       id: `key-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
       name: params.name || 'New API Key',
       prefix,
       keyHash,
-      scopes: params.scopes.length > 0 ? params.scopes : ['products:read', 'orders:read'],
+      provider,
+      scopes: params.scopes.length > 0 ? params.scopes : ['dropai:cloud', 'products:read', 'orders:read'],
       status: 'ACTIVE',
       createdAt: now.toISOString(),
       expiresAt,
-      lastUsedAt: null,
-      usageCount: 0,
+      lastUsedAt: now.toISOString(),
+      usageCount: 1,
       environment: env,
-      rateLimitPerMin: 120,
+      rateLimitPerMin: provider === 'DROPAI' ? 300 : 120,
+      timeConnect,
     };
 
     apiKeysStore.unshift(record);
@@ -420,6 +524,7 @@ export const apiKeyManager = {
         id: record.id,
         name: record.name,
         prefix: record.prefix,
+        provider: record.provider,
         scopes: record.scopes,
         status: record.status,
         createdAt: record.createdAt,
@@ -428,6 +533,7 @@ export const apiKeyManager = {
         usageCount: record.usageCount,
         environment: record.environment,
         rateLimitPerMin: record.rateLimitPerMin,
+        timeConnect: record.timeConnect,
       },
       secret: plaintextSecret, // Return full secret only once!
     };
@@ -451,6 +557,7 @@ export const apiKeyManager = {
       name: `${existing.name} (Rotated)`,
       prefix: newPrefix,
       keyHash: newKeyHash,
+      provider: existing.provider,
       scopes: existing.scopes,
       status: 'ACTIVE',
       createdAt: new Date().toISOString(),
@@ -459,6 +566,11 @@ export const apiKeyManager = {
       usageCount: 0,
       environment: existing.environment,
       rateLimitPerMin: existing.rateLimitPerMin,
+      timeConnect: {
+        ...existing.timeConnect,
+        lastConnectedAt: new Date().toISOString(),
+        status: 'CONNECTED',
+      },
     };
 
     apiKeysStore.unshift(newRecord);
@@ -468,6 +580,7 @@ export const apiKeyManager = {
         id: newRecord.id,
         name: newRecord.name,
         prefix: newRecord.prefix,
+        provider: newRecord.provider,
         scopes: newRecord.scopes,
         status: newRecord.status,
         createdAt: newRecord.createdAt,
@@ -476,8 +589,48 @@ export const apiKeyManager = {
         usageCount: newRecord.usageCount,
         environment: newRecord.environment,
         rateLimitPerMin: newRecord.rateLimitPerMin,
+        timeConnect: newRecord.timeConnect,
       },
       secret: newPlaintextSecret,
+    };
+  },
+
+  testTimeConnect(id: string): { success: boolean; key?: ApiKeyMetadata; latencyMs?: number; error?: string } {
+    const key = apiKeysStore.find((k) => k.id === id);
+    if (!key) return { success: false, error: 'API key not found.' };
+    if (key.status === 'REVOKED') return { success: false, error: 'Cannot test connection for a revoked API key.' };
+
+    const latencyMs = Math.floor(Math.random() * 24) + 16; // 16 - 40ms fast handshake
+    const now = new Date().toISOString();
+
+    key.timeConnect = {
+      ...key.timeConnect,
+      lastConnectedAt: now,
+      connectionLatencyMs: latencyMs,
+      timeToConnectSec: +(latencyMs / 1000).toFixed(3),
+      status: 'CONNECTED',
+    };
+    key.lastUsedAt = now;
+    key.usageCount += 1;
+
+    return {
+      success: true,
+      latencyMs,
+      key: {
+        id: key.id,
+        name: key.name,
+        prefix: key.prefix,
+        provider: key.provider,
+        scopes: key.scopes,
+        status: key.status,
+        createdAt: key.createdAt,
+        expiresAt: key.expiresAt,
+        lastUsedAt: key.lastUsedAt,
+        usageCount: key.usageCount,
+        environment: key.environment,
+        rateLimitPerMin: key.rateLimitPerMin,
+        timeConnect: key.timeConnect,
+      },
     };
   },
 

@@ -10,8 +10,12 @@ import {
   Terminal,
   Search,
   ExternalLink,
+  DollarSign,
+  ArrowRightLeft,
 } from 'lucide-react';
 import { NotificationItem, StoreIntegration } from '../../types';
+import { useCurrency } from '../../hooks/useCurrency';
+import { CurrencyConverterModal } from '../currency/CurrencyConverterModal';
 
 interface HeaderProps {
   currentView: string;
@@ -37,9 +41,12 @@ export const Header: React.FC<HeaderProps> = ({
   onMarkAllNotificationsRead,
 }) => {
   const [showNotifications, setShowNotifications] = useState(false);
+  const [showCurrencyModal, setShowCurrencyModal] = useState(false);
+  const { currentCurrency, currentMeta } = useCurrency();
   const unreadCount = notifications.filter((n) => !n.isRead).length;
 
   const currentStore = stores.find((s) => s.id === selectedStoreId);
+
 
   return (
     <header className="sticky top-0 z-30 h-20 w-full bg-[#0A0A0B]/90 backdrop-blur-md border-b border-[#1F1F21] px-4 md:px-8 flex items-center justify-between">
@@ -117,6 +124,18 @@ export const Header: React.FC<HeaderProps> = ({
         </div>
 
         <div className="hidden xl:block h-8 w-[1px] bg-[#1F1F21]"></div>
+
+        {/* Currency Switcher & Converter Button */}
+        <button
+          id="header-currency-switcher-btn"
+          onClick={() => setShowCurrencyModal(true)}
+          className="flex items-center space-x-1.5 px-3 py-2 rounded-lg text-xs font-mono font-semibold bg-[#151517] border border-[#2D2D30] text-amber-400 hover:border-amber-500/50 hover:bg-amber-500/10 transition-all cursor-pointer"
+          title="Multi-Currency FX & Converter"
+        >
+          <span>{currentMeta.flag}</span>
+          <span className="font-bold">{currentCurrency}</span>
+          <ArrowRightLeft className="w-3 h-3 text-[#64748B]" />
+        </button>
 
         {/* High-Contrast "NEW AUTOMATION" Button */}
         <button
@@ -214,6 +233,12 @@ export const Header: React.FC<HeaderProps> = ({
           <span className="hidden sm:inline font-mono">Lock</span>
         </button>
       </div>
+
+      {/* Currency Converter & Multi-Currency Modal */}
+      <CurrencyConverterModal
+        isOpen={showCurrencyModal}
+        onClose={() => setShowCurrencyModal(false)}
+      />
     </header>
   );
 };

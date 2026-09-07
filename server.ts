@@ -19,7 +19,7 @@ import {
   INITIAL_NOTIFICATIONS,
   INITIAL_LOGS,
 } from './src/data/mockData';
-import { Product, Order, ReturnRefundTicket, AIMemoryItem, AutomationWorkflow, ScheduledJob } from './src/types';
+import { Product, Order, ReturnRefundTicket, AIMemoryItem, AutomationWorkflow, ScheduledJob, StoreIntegration } from './src/types';
 import {
   securityHeadersMiddleware,
   createRateLimiter,
@@ -183,25 +183,48 @@ async function startServer() {
   });
 
   app.post('/api/security/keys', (req: Request, res: Response) => {
-    const { name, scopes, environment, expiresInDays } = req.body;
+    const { name, scopes, environment, expiresInDays, provider, timeConnectMode, timeConnectWindow } = req.body;
     if (!name || typeof name !== 'string') {
       return res.status(400).json({ error: 'Key name is required' });
     }
     const result = apiKeyManager.createKey({
       name: name.trim(),
-      scopes: Array.isArray(scopes) ? scopes : ['products:read', 'orders:read'],
+      scopes: Array.isArray(scopes) ? scopes : ['dropai:cloud', 'products:read', 'orders:read'],
+      provider: provider || 'DROPAI',
       environment: environment === 'TEST' ? 'TEST' : 'LIVE',
       expiresInDays: typeof expiresInDays === 'number' ? expiresInDays : 90,
+      timeConnectMode: timeConnectMode || 'REAL_TIME',
+      timeConnectWindow,
     });
 
     recordSecurityEvent('API_KEY_CREATED', 'INFO', req, {
       keyId: result.key.id,
       name: result.key.name,
+      provider: result.key.provider,
       scopes: result.key.scopes,
       prefix: result.key.prefix,
+      timeConnect: result.key.timeConnect,
     });
 
     res.status(201).json(result);
+  });
+
+  app.post('/api/security/keys/:id/time-connect', (req: Request, res: Response) => {
+    const { id } = req.params;
+    const result = apiKeyManager.testTimeConnect(id);
+    if (!result.success) {
+      recordSecurityEvent('TIME_CONNECT_FAILED', 'WARN', req, { keyId: id, error: result.error });
+      return res.status(400).json({ success: false, error: result.error });
+    }
+
+    recordSecurityEvent('TIME_CONNECT_PULSE', 'INFO', req, {
+      keyId: id,
+      provider: result.key?.provider,
+      latencyMs: result.latencyMs,
+      status: 'CONNECTED',
+    });
+
+    res.json(result);
   });
 
   app.delete('/api/security/keys/:id', (req: Request, res: Response) => {
@@ -817,6 +840,57 @@ CRITICAL MANDATE:
 
   app.get('/api/stores', (req: Request, res: Response) => {
     res.json(stores);
+  });
+
+  app.post('/api/stores', (req: Request, res: Response) => {
+    const { name, platform, storeUrl, apiKey, timeConnect } = req.body;
+    const isDropAI = platform === 'DropAI' || platform === 'DROPAI';
+    const isOthers = platform === 'Others' || platform === 'OTHERS';
+
+    const newStore: StoreIntegration = {
+      id: `store-${Date.now()}`,
+      name:
+        name?.trim() ||
+        (isDropAI
+          ? 'DropAI Cloud Storefront'
+          : isOthers
+          ? 'Custom Headless Channel'
+          : 'Connected Channel'),
+      platform: isDropAI ? 'DropAI' : isOthers ? 'Others' : platform || 'Shopify',
+      storeUrl: storeUrl?.trim() || (isDropAI ? 'https://cloud.dropai.internal' : 'https://api.external-store.com'),
+      status: 'CONNECTED',
+      lastSyncAt: 'Just now',
+      productsCount: isDropAI ? 4 : 0,
+      ordersCount: isDropAI ? 2 : 0,
+      apiKeyConfigured: Boolean(apiKey),
+      currency: 'USD',
+      autoFulfillment: true,
+      timeConnect: {
+        mode: timeConnect?.mode || 'REAL_TIME',
+        intervalMinutes: timeConnect?.intervalMinutes || 5,
+        lastConnectedAt: new Date().toISOString(),
+        latencyMs: 19,
+        status: 'CONNECTED',
+      },
+    };
+    stores.unshift(newStore);
+    res.status(201).json(newStore);
+  });
+
+  app.post('/api/stores/:id/time-connect', (req: Request, res: Response) => {
+    const { id } = req.params;
+    const store = stores.find((s) => s.id === id);
+    if (!store) return res.status(404).json({ error: 'Store not found' });
+    const latency = Math.floor(Math.random() * 20) + 16;
+    store.lastSyncAt = 'Just now';
+    store.status = 'CONNECTED';
+    if (!store.timeConnect) {
+      store.timeConnect = { mode: 'REAL_TIME', status: 'CONNECTED' };
+    }
+    store.timeConnect.lastConnectedAt = new Date().toISOString();
+    store.timeConnect.latencyMs = latency;
+    store.timeConnect.status = 'CONNECTED';
+    res.json({ success: true, store, latencyMs: latency });
   });
 
   app.post('/api/stores/:id/sync', (req: Request, res: Response) => {

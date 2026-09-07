@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
   CreditCard,
   DollarSign,
@@ -7,14 +7,21 @@ import {
   ShieldCheck,
   Building,
   CheckCircle2,
+  ArrowRightLeft,
+  Globe,
 } from 'lucide-react';
 import { Order } from '../../types';
+import { useCurrency } from '../../hooks/useCurrency';
+import { CurrencyConverterModal } from '../currency/CurrencyConverterModal';
 
 interface FinanceViewProps {
   orders: Order[];
 }
 
 export const FinanceView: React.FC<FinanceViewProps> = ({ orders }) => {
+  const [showConverter, setShowConverter] = useState(false);
+  const { currentCurrency, format, convertSync, currentMeta } = useCurrency();
+
   const totalPaidRevenue = orders
     .filter((o) => o.paymentStatus === 'PAID')
     .reduce((sum, o) => sum + o.totalRevenue, 0);
@@ -23,15 +30,28 @@ export const FinanceView: React.FC<FinanceViewProps> = ({ orders }) => {
     .filter((o) => o.paymentStatus === 'PAID')
     .reduce((sum, o) => sum + o.netProfit, 0);
 
+  const payoutBalanceUsd = totalNetProfit * 0.85;
+  const merchantFeesUsd = totalPaidRevenue * 0.049;
+
   return (
     <div id="finance-view-container" className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl md:text-3xl font-serif text-white tracking-tight">
-            Financial Ledger & Payment Gateways
-          </h1>
-          <p className="text-xs text-[#94A3B8]">
-            Realized cash flow, payment gateway settlements, platform transaction fees, and bank transfers.
+          <div className="flex items-center space-x-2.5">
+            <h1 className="text-2xl md:text-3xl font-serif text-white tracking-tight">
+              Financial Ledger & Payment Gateways
+            </h1>
+            <button
+              onClick={() => setShowConverter(true)}
+              className="px-2.5 py-1 rounded-lg bg-[#18181D] hover:bg-[#25252D] border border-[#2F2F36] hover:border-amber-500/50 text-[11px] font-mono text-amber-400 flex items-center space-x-1.5 transition cursor-pointer"
+            >
+              <span>{currentMeta.flag}</span>
+              <span>{currentCurrency} Active</span>
+              <ArrowRightLeft className="w-3 h-3 text-[#64748B]" />
+            </button>
+          </div>
+          <p className="text-xs text-[#94A3B8] mt-1">
+            Realized cash flow, multi-currency payouts, platform transaction fees, and bank transfers.
           </p>
         </div>
 
@@ -44,25 +64,34 @@ export const FinanceView: React.FC<FinanceViewProps> = ({ orders }) => {
       {/* Overview Cards */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
         <div className="rounded-xl bg-[#111113] border border-[#1F1F21] p-5 space-y-2">
-          <span className="text-xs text-[#94A3B8]">Available Payout Balance</span>
+          <div className="flex justify-between items-center">
+            <span className="text-xs text-[#94A3B8]">Available Payout Balance</span>
+            <span className="text-[10px] font-mono text-[#64748B]">USD Base: ${payoutBalanceUsd.toFixed(2)}</span>
+          </div>
           <div className="text-3xl font-black text-[#D97706] font-mono">
-            ${(totalNetProfit * 0.85).toFixed(2)}
+            {format(convertSync(payoutBalanceUsd, 'USD', currentCurrency), currentCurrency)}
           </div>
           <p className="text-[11px] text-[#64748B] font-mono">Next transfer scheduled tomorrow at 06:00 UTC</p>
         </div>
 
         <div className="rounded-xl bg-[#111113] border border-[#1F1F21] p-5 space-y-2">
-          <span className="text-xs text-[#94A3B8]">Total Net Operating Profit</span>
+          <div className="flex justify-between items-center">
+            <span className="text-xs text-[#94A3B8]">Total Net Operating Profit</span>
+            <span className="text-[10px] font-mono text-[#64748B]">USD Base: ${totalNetProfit.toFixed(2)}</span>
+          </div>
           <div className="text-3xl font-black text-emerald-400 font-mono">
-            ${totalNetProfit.toFixed(2)}
+            {format(convertSync(totalNetProfit, 'USD', currentCurrency), currentCurrency)}
           </div>
           <p className="text-[11px] text-[#64748B] font-mono">Net of COGS, shipping, and merchant fees</p>
         </div>
 
         <div className="rounded-xl bg-[#111113] border border-[#1F1F21] p-5 space-y-2">
-          <span className="text-xs text-[#94A3B8]">Merchant Fees Deducted</span>
+          <div className="flex justify-between items-center">
+            <span className="text-xs text-[#94A3B8]">Merchant Fees Deducted</span>
+            <span className="text-[10px] font-mono text-[#64748B]">USD Base: ${merchantFeesUsd.toFixed(2)}</span>
+          </div>
           <div className="text-3xl font-black text-[#E2E8F0] font-mono">
-            ${(totalPaidRevenue * 0.049).toFixed(2)}
+            {format(convertSync(merchantFeesUsd, 'USD', currentCurrency), currentCurrency)}
           </div>
           <p className="text-[11px] text-[#64748B] font-mono">Stripe 2.9%+$0.30 + Shopify 2% platform fee</p>
         </div>
@@ -99,6 +128,12 @@ export const FinanceView: React.FC<FinanceViewProps> = ({ orders }) => {
           </div>
         </div>
       </div>
+
+      {/* Multi-Currency FX Converter Modal */}
+      <CurrencyConverterModal
+        isOpen={showConverter}
+        onClose={() => setShowConverter(false)}
+      />
     </div>
   );
 };
